@@ -1,0 +1,29 @@
+{
+  "https://www.amazon.com/robots.txt": {
+    "status": 200,
+    "length": 7887,
+    "content_type": "text/plain",
+    "sitemap_count": 0,
+    "sitemaps": [],
+    "looks_xml": false,
+    "looks_html": false
+  },
+  "https://www.amazon.com/sitemap.xml": {
+    "status": 500,
+    "length": 2672,
+    "content_type": "text/html",
+    "sitemap_count": 0,
+    "sitemaps": [],
+    "looks_xml": false,
+    "looks_html": true
+  },
+  "https://www.amazon.com/sitemap_index.xml": {
+    "status": 500,
+    "length": 2672,
+    "content_type": "text/html",
+    "sitemap_count": 0,
+    "sitemaps": [],
+    "looks_xml": false,
+    "looks_html": true
+  }
+}

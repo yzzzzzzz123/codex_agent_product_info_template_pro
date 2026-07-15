@@ -1,0 +1,25 @@
+{
+  "compile_passed": true,
+  "stage2_core_self_test_passed": true,
+  "live_checker_passed": true,
+  "default_projection": {
+    "variant": "41349431033943",
+    "origin": 5699.0,
+    "activity": 4299.0,
+    "status": 1
+  },
+  "query_projection": {
+    "variant": "41389393444951",
+    "origin": 8500.0,
+    "activity": 8500.0,
+    "status": 1
+  },
+  "sku_count": 5,
+  "description_block_count": 6,
+  "browser_capture_http_status": 200,
+  "copied_tool_sha256": {
+    "final_code_check.py": "816d77a0aeda25a8c039ea948114fc4c023efacd1d2d4cdd263458e04297284c",
+    "final_code_check_offline.py": "22692ee6ea08fab4d360654fc958443bbd6f61880f78f6a4d690998f5b04169f",
+    "final_render_html.py": "07c849d0ff04a20d61a4901b2df43523f752fb0128d533dae383552a0e33ccb0"
+  }
+}

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPU/SKU Extraction Result - ebay.com</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { background: #fff; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header h1 { font-size: 24px; margin-bottom: 8px; color: #1a1a1a; }
+        .header .url { color: #666; font-size: 14px; word-break: break-all; }
+        .section { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .section h2 { font-size: 18px; margin-bottom: 16px; color: #1a1a1a; border-bottom: 2px solid #e5e5e5; padding-bottom: 8px; }
+        .price-box { display: flex; gap: 20px; align-items: baseline; }
+        .price { font-size: 28px; font-weight: bold; color: #e53935; }
+        .price-origin { font-size: 16px; color: #999; text-decoration: line-through; }
+        .currency { font-size: 14px; color: #666; margin-left: 4px; }
+        .images { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+        .images img { width: 100%; height: 150px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e5e5; }
+        .props-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; }
+        .prop-item { display: flex; padding: 8px; background: #fafafa; border-radius: 4px; }
+        .prop-label { font-weight: 600; color: #555; min-width: 120px; }
+        .prop-value { color: #333; }
+        .description { line-height: 1.6; color: #444; }
+        .description p { margin-bottom: 10px; }
+        .sku-table { width: 100%; border-collapse: collapse; }
+        .sku-table th, .sku-table td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e5e5; }
+        .sku-table th { background: #fafafa; font-weight: 600; }
+        .status-active { color: #43a047; font-weight: 600; }
+        .status-inactive { color: #e53935; font-weight: 600; }
+        .review-stats { display: flex; gap: 24px; align-items: center; }
+        .score { font-size: 32px; font-weight: bold; color: #ffa726; }
+        .review-count { color: #666; }
+        .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+        .field-item { padding: 10px; background: #f5f5f5; border-radius: 4px; }
+        .field-label { font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+        .field-value { font-size: 14px; color: #333; font-weight: 500; }
+        .meta { font-size: 12px; color: #999; margin-top: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Logitech M240 Silent Bluetooth Mouse, Wireless, Compact, Portable, Blue / Gray</h1>
+            <div class="url">https://www.ebay.com/itm/315672620881</div>
+        </div>
+
+        <div class="section">
+            <h2>Price & Status</h2>
+            <div class="price-box">
+                <div class="price">$9.99<span class="currency">USD</span></div>
+                
+            </div>
+            <div style="margin-top: 12px;">
+                Status: <span class="status-active">Active</span>
+            </div>
+            
+            <div class="review-stats" style="margin-top: 16px;">
+                <div class="score">5</div>
+                <div>
+                    <div style="font-weight: 600;">Rating</div>
+                    <div class="review-count">N/A reviews</div>
+                </div>
+            </div>
+            
+        </div>
+
+        <div class="section">
+            <h2>Product Images (10)</h2>
+            <div class="images">
+                <img src="https://i.ebayimg.com/images/g/hFwAAOSw77xmv5Me/s-l1600.webp" alt="Product image" onerror="this.style.display='none'"><img src="https://i.ebayimg.com/images/g/hFwAAOSw77xmv5Me/s-l400.jpg" alt="Product image" onerror="this.style.display='none'"><img src="https://i.ebayimg.com/images/g/hFwAAOSw77xmv5Me/s-l140.webp" alt="Product image" onerror="this.style.display='none'"><img src="https://i.ebayimg.com/images/g/A68AAOSwZSpmv5Me/s-l140.webp" alt="Product image" onerror="this.style.display='none'"><img src="https://i.ebayimg.com/images/g/DXIAAOSw55xmv5Me/s-l140.webp" alt="Product image" onerror="this.style.display='none'"><img src="https://i.ebayimg.com/images/g/Ax0AAOSwpRBmv5Me/s-l140.webp" alt="Product image" onerror="this.style.display='none'"><img src="https://i.ebayimg.com/images/g/3RcAAOSwkYtmv5Me/s-l140.webp" alt="Product image" onerror="this.style.display='none'"><img src="https://i.ebayimg.com/thumbs/images/g/hFwAAOSw77xmv5Me/s-l500.jpg" alt="Product image" onerror="this.style.display='none'"><img src="https://i.ebayimg.com/images/g/A68AAOSwZSpmv5Me/s-l1600.webp" alt="Product image" onerror="this.style.display='none'"><img src="https://i.ebayimg.com/images/g/A68AAOSwZSpmv5Me/s-l500.webp" alt="Product image" onerror="this.style.display='none'">
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Properties (5)</h2>
+            <div class="props-grid">
+                
+                    <div class="prop-item">
+                        <div class="prop-label">Condition</div>
+                        <div class="prop-value">Open box An item in excellent, new condition with no wear. The item may be missing the original packaging or protective wrapping, or may be in the original packaging but not sealed. The item includes original accessories. The item may be a factory second. See the seller's listing for full details and description. See all condition definitions opens in a new window or tab</div>
+                    </div>
+                
+                    <div class="prop-item">
+                        <div class="prop-label">Seller Notes</div>
+                        <div class="prop-value">“Ships in White Box. New Condition.”</div>
+                    </div>
+                
+                    <div class="prop-item">
+                        <div class="prop-label">Brand</div>
+                        <div class="prop-value">Logitech</div>
+                    </div>
+                
+                    <div class="prop-item">
+                        <div class="prop-label">Type</div>
+                        <div class="prop-value">Standard Mouse</div>
+                    </div>
+                
+                    <div class="prop-item">
+                        <div class="prop-label">Color</div>
+                        <div class="prop-value">Blue</div>
+                    </div>
+                
+            </div>
+        </div>
+
+        
+        <div class="section">
+            <h2>Description</h2>
+            <div class="description">
+                <p>Item description from the seller About this seller poppy9780 99% positive feedback • 748K items sold Joined Feb 2007 Usually responds within 24 hours Please add me to your list of favorite sellers and come again.</p><p>I offer Motorola, Plantronics, Jabra, Samsung and LG Bluetooth Products and Cell phone Accessories.</p><p>Please add me to your list of favorite sellers and come again.</p><p>I offer Motorola, Plantronics, Jabra, Samsung and LG Bluetooth Products and Cell phone Accessories.</p><p>Visit store Message seller - opens in a new dialog <path fill-rule=evenodd d="M11.684 0c-.017 0 .017 0 0 0a4.236 4.236 0 00-3.022 1.267A6.93 6.93 0 008 2.084a6.826 6.826 0 00-.806-.966C6.44.366 5.383 0 4.31 0h-.05c-.934 0-1.87.272-2.591.865-2.152 1.767-2.142 4.708-.43 6.442l6.035 6.38a1.002 1.002 0 001.453 0l6.016-6.36A4.</p>
+            </div>
+        </div>
+        
+
+        <div class="section">
+            <h2>SKUs (1)</h2>
+            <table class="sku-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Props</th>
+                        <th>Price</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                        <tr>
+                            <td>1</td>
+                            <td>Item ID: 315672620881</td>
+                            <td>$9.99</td>
+                            <td><span class="status-active">Active</span></td>
+                        </tr>
+                    
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>All Fields</h2>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Effective Price</div>
+                    <div class="field-value">$9.99</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Default SKU Index</div>
+                    <div class="field-value">0</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Not Detail</div>
+                    <div class="field-value">null</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">SKU Count</div>
+                    <div class="field-value">1</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="meta">
+            Generated by taojin_v3_crawl_skill | Site: ebay.com | Stage: Final
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,110 @@
+{
+  "source_url": "https://www.jackery.com/products/jackery-solar-generator-5000-plus",
+  "source_item_name": "Jackery Solar Generator 5000 Plus",
+  "source_pics": [
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-6371791.webp?v=1781776465",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-2442916.webp?v=1781776465",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-6751092.webp?v=1781776465",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-8300176.webp?v=1781776465",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-9272018.webp?v=1781776466",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-7186595.webp?v=1781776466",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-8223534.webp?v=1781776466",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-4847389.webp?v=1781776466",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-5430403.webp?v=1781776467",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-5617534.webp?v=1781776467",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-8540426.webp?v=1781776518",
+    "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-2964271.webp?v=1782437707"
+  ],
+  "descriptions": [
+    "Handles Even the Big Appliances\nRun major home appliances with 7200W of rated power (14,400W surge). Supports both 120V and 240V for power more devices, even a 5-ton AC for comfortable indoor temperatures or a water heater for a hot shower.",
+    "Backup That Lasts for 13 Days\nA 5040Wh capacity, expandable up to 60kWh — enough to keep your home running through an extended outage, not just overnight.",
+    "More Power From the Sun\nCompatible with both high-and low-voltage solar panels, recharge in about 2 hours with up to 4000W input, staying powered in home or RV.",
+    "Protect your essential circuits smartly\nPair with the Jackery 60A Smart Transfer Switch to power up to 12 circuits at 120V or 6 circuits at 240V.",
+    "11 Years of Reliable Power\nLess than $1 a day for up to 11 years of peace of mind, powered by durable LiFePO₄ battery cells and ChargeShield™ 2.0 protection.",
+    "Outages Won't Interrupt a Thing\nTrue 0ms UPS switching keeps computers, appliances, and critical devices running without interruption."
+  ],
+  "source_origin_price": 5699.0,
+  "source_activity_price": 4299.0,
+  "source_price_currency": "USD",
+  "props": {
+    "Brand": "Jackery",
+    "Product ID": "7308401999959",
+    "Capacity": "45Ah/112V DC (5040 Wh)",
+    "Cell Chemistry": "LiFePO4",
+    "Warranty": "5 Years",
+    "AC Total Output": "7200W Max, 14400W Surge",
+    "Select Options": "Explorer 5000 Plus + SolarSaga 500 X x 2",
+    "SKU": "60-5050-USA1A1"
+  },
+  "status": 1,
+  "skus": [
+    {
+      "sku_props": {
+        "Select Options": "Explorer 5000 Plus + SolarSaga 500 X x 2",
+        "SKU": "60-5050-USA1A1"
+      },
+      "source_origin_price": 5699.0,
+      "source_activity_price": 4299.0,
+      "source_price_currency": "USD",
+      "source_pics": [
+        "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-6371791.webp?v=1781776465"
+      ],
+      "status": 1
+    },
+    {
+      "sku_props": {
+        "Select Options": "Explorer 5000 Plus",
+        "SKU": "21-0001-000288"
+      },
+      "source_origin_price": 4299.0,
+      "source_activity_price": 2879.0,
+      "source_price_currency": "USD",
+      "source_pics": [
+        "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-8300176.webp?v=1781776465"
+      ],
+      "status": 1
+    },
+    {
+      "sku_props": {
+        "Select Options": "Explorer 5000 Plus + SolarSaga 500 X x 2 + Smart Transfer Switch",
+        "SKU": "60-5050-USA112"
+      },
+      "source_origin_price": 6499.0,
+      "source_activity_price": 4999.0,
+      "source_price_currency": "USD",
+      "source_pics": [
+        "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-2442916.webp?v=1781776465"
+      ],
+      "status": 1
+    },
+    {
+      "sku_props": {
+        "Select Options": "Explorer 5000 Plus (10kWh) + SolarSaga 500 X x 2 + Smart Transfer Switch",
+        "SKU": "40-5050-USA112"
+      },
+      "source_origin_price": 8500.0,
+      "source_activity_price": 8500.0,
+      "source_price_currency": "USD",
+      "source_pics": [
+        "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-6751092.webp?v=1781776465"
+      ],
+      "status": 1
+    },
+    {
+      "sku_props": {
+        "Select Options": "Home Backup Kit 5000 Plus (20kWh)",
+        "SKU": "60-505000-US00057"
+      },
+      "source_origin_price": 13119.0,
+      "source_activity_price": 9999.0,
+      "source_price_currency": "USD",
+      "source_pics": [
+        "https://cdn.shopify.com/s/files/1/0970/9262/files/jackery-solar-generator-5000-plus-2964271.webp?v=1782437707"
+      ],
+      "status": 1
+    }
+  ],
+  "source_score": null,
+  "source_cmms": null,
+  "not_detail": null
+}

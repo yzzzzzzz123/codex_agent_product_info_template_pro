@@ -1,0 +1,85 @@
+[
+  {
+    "name": "home",
+    "url": "https://www.amazon.com/",
+    "final_url": "https://www.amazon.com/",
+    "status": 202,
+    "length": 2007,
+    "blocked": false,
+    "title": "",
+    "dp_links": []
+  },
+  {
+    "name": "search_wireless_mouse",
+    "url": "https://www.amazon.com/s?k=wireless+mouse",
+    "final_url": "https://www.amazon.com/s?k=wireless+mouse",
+    "status": 200,
+    "length": 1378629,
+    "blocked": false,
+    "title": "Amazon.com : wireless mouse",
+    "dp_links": [
+      "https://www.amazon.com/AIKOKOK-Wireless-Bluetooth-Rechargeable-Portable/dp/B0H15XGYZC/ref=sr_1_3",
+      "https://www.amazon.com/AIKOKOK-Wireless-Bluetooth-Rechargeable-Portable/dp/B0H15XGYZC/ref=sr_1_3",
+      "https://www.amazon.com/Amazon-Basics-Wireless-Multi-Device-Compatibility/dp/B005EJH6Z4/ref=sr_1_9",
+      "https://www.amazon.com/Amazon-Basics-Wireless-Multi-Device-Compatibility/dp/B005EJH6Z4/ref=sr_1_9",
+      "https://www.amazon.com/Apple-Magic-Mouse-Multi-Touch-Surface/dp/B0DL72PK1P/ref=sr_1_8",
+      "https://www.amazon.com/Apple-Magic-Mouse-Multi-Touch-Surface/dp/B0DL72PK1P/ref=sr_1_8",
+      "https://www.amazon.com/Bluetooth-Rechargeable-Sensitivity-Ergonomic-Classroom/dp/B0GXTQNW31/ref=sr_1_7",
+      "https://www.amazon.com/HP-X3000-Wireless-Mouse-Travel-Friendly/dp/B09Y8K2HJN/ref=sr_1_15",
+      "https://www.amazon.com/HP-X3000-Wireless-Mouse-Travel-Friendly/dp/B09Y8K2HJN/ref=sr_1_15",
+      "https://www.amazon.com/Logitech-Bluetooth-Wireless-Portable-Compatible/dp/B0BXNR9DB6/ref=sr_1_12"
+    ]
+  },
+  {
+    "name": "best_sellers",
+    "url": "https://www.amazon.com/Best-Sellers/zgbs",
+    "final_url": "https://www.amazon.com/Best-Sellers/zgbs",
+    "status": 200,
+    "length": 647368,
+    "blocked": false,
+    "title": "Amazon.com Best Sellers: The most popular items on Amazon",
+    "dp_links": [
+      "https://www.amazon.com/2026-Panini-World-Sticker-Collection/dp/B0G3Y89LW9/ref=zg_bs_c_sporting-goods_d_sccl_6/130-3185280-0727602",
+      "https://www.amazon.com/ATHMILE-Quick-Dry-Barefoot-Exercise-Accessories/dp/B09Q3MYDQH/ref=zg_bs_c_fashion_d_sccl_1/130-3185280-0727602",
+      "https://www.amazon.com/Amazon-Basics-Batteries-Leak-Free-Household/dp/B00NTCH52W/ref=zg_bs_c_hpc_d_sccl_2/130-3185280-0727602",
+      "https://www.amazon.com/Amazon-Basics-Cotton-Swabs-500ct/dp/B09541P9WH/ref=zg_bs_c_beauty_d_sccl_2/130-3185280-0727602",
+      "https://www.amazon.com/Amazon-Basics-Ply-Paper-Towel/dp/B09BWFX1L6/ref=zg_bs_c_hpc_d_sccl_4/130-3185280-0727602",
+      "https://www.amazon.com/Amazon-newest-AI-powered-Search-million/dp/B0F7Z4QZTT/ref=zg_bs_c_electronics_d_sccl_5/130-3185280-0727602",
+      "https://www.amazon.com/AmazonBasics-Pound-Neoprene-Dumbbells-Weights/dp/B01LR5RG08/ref=zg_bs_c_sporting-goods_d_sccl_3/130-3185280-0727602",
+      "https://www.amazon.com/Angel-Soft-Toilet-Regular-Strong/dp/B0FN4NH4K8/ref=zg_bs_c_hpc_d_sccl_6/130-3185280-0727602",
+      "https://www.amazon.com/Apple-AirTag-2nd-Generation-Precision/dp/B0GJTFXNRX/ref=zg_bs_c_electronics_d_sccl_3/130-3185280-0727602",
+      "https://www.amazon.com/Apple-Bluetooth-Headphones-Personalized-Effortless/dp/B0DGHMNQ5Z/ref=zg_bs_c_electronics_d_sccl_4/130-3185280-0727602"
+    ]
+  },
+  {
+    "name": "sample_dp_echo",
+    "url": "https://www.amazon.com/dp/B08N5WRWNW",
+    "final_url": "https://www.amazon.com/dp/B08N5WRWNW",
+    "status": 404,
+    "length": 2296,
+    "blocked": true,
+    "title": "Page Not Found",
+    "dp_links": []
+  },
+  {
+    "name": "sample_dp_fire",
+    "url": "https://www.amazon.com/dp/B07FZ8S74R",
+    "final_url": "https://www.amazon.com/dp/B07FZ8S74R",
+    "status": 200,
+    "length": 1499678,
+    "blocked": false,
+    "title": "Amazon Echo Dot (3rd Gen)",
+    "dp_links": [
+      "https://www.amazon.com/dp/B07XKF5RM3",
+      "https://www.amazon.com/dp/B09B2SBHQK",
+      "https://www.amazon.com/dp/B09B2SBHQK",
+      "https://www.amazon.com/dp/B09B8V1LZ3",
+      "https://www.amazon.com/dp/B09B8V1LZ3",
+      "https://www.amazon.com/dp/B09ZXJDSL5",
+      "https://www.amazon.com/dp/B0BFC7WQ6R",
+      "https://www.amazon.com/dp/B0BFC8DR7C",
+      "https://www.amazon.com/dp/B0C5DPSW5Y",
+      "https://www.amazon.com/dp/B0D6SZKGT4"
+    ]
+  }
+]

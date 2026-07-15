@@ -1,0 +1,7 @@
+{
+  "source_score": 4.5,
+  "source_cmms": 42764,
+  "score_source": "#acrPopover title / #reviewsMedley rating-out-of-text",
+  "count_source": "#acrCustomerReviewText / data-hook=total-review-count",
+  "provider": "dom"
+}

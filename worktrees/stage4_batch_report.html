@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stage4 Batch Report</title>
+<style>
+:root {
+  --border: #d7dde8;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+header {
+  padding: 22px 28px 14px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border);
+}
+h1 { margin: 0 0 8px; font-size: 24px; }
+.subtitle { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.wrap { max-width: 1186px; margin: 0 auto; padding: 18px 22px 60px; }
+.legend, .tools, .switcher, .site-head, .mark-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.legend { margin-bottom: 24px; }
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.tools { margin: 14px 0; }
+button {
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: #202938;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+button:hover { background: #f275f9; }
+.site-btn {
+  border-color: transparent;
+  color: #ffffff;
+  opacity: 0.88;
+}
+.site-btn.active {
+  filter: brightness(1.08) saturate(1.05);
+  font-weight: 700;
+}
+.panel {
+  margin-top: 16px;
+  padding: 22px 26px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px 14px;
+  align-items: start;
+}
+.label { color: var(--muted); font-size: 13px; }
+.value { overflow-wrap: anywhere; line-height: 1.45; }
+pre {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f4f6fa;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.code-box {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f4f6fa;
+  padding: 12px;
+}
+.code-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.collapsed pre { max-height: 120px; overflow: auto; }
+.sample-links { list-style: none; padding: 0; margin: 0; }
+.sample-links li { margin-bottom: 6px; }
+.sample-links a { color: #1f6feb; text-decoration: none; }
+.sample-links a:hover { text-decoration: underline; }
+.sample-note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.overview-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.overview-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  text-align: center;
+}
+.overview-card .num {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.overview-card .lbl {
+  font-size: 12px;
+  color: var(--muted);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.table th, .table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+}
+.table th {
+  background: #f4f6fa;
+  font-weight: 600;
+  color: var(--muted);
+}
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Stage4 Batch Report</h1>
+  <div class="subtitle">批量站点 Stage4 交付汇总报告。</div>
+</header>
+<div class="wrap">
+  <div class="overview-cards" id="overviewCards"></div>
+  <div class="legend">
+    <span><i class="dot" style="background:#0ba63e"></i>ok</span>
+    <span><i class="dot" style="background:#008af7"></i>partial</span>
+    <span><i class="dot" style="background:#ff8a00"></i>none</span>
+    <span><i class="dot" style="background:#6b7280"></i>blocked</span>
+    <span><i class="dot" style="background:#e60023"></i>dead</span>
+    <span><i class="dot" style="background:#7c3aed"></i>amb</span>
+  </div>
+  <div class="tools">
+    <button id="showAll">显示全部</button>
+    <button id="failOnly">仅失败</button>
+    <button id="tableView">表格视图</button>
+    <button id="detailView">详情视图</button>
+  </div>
+  <div id="tableViewPanel" class="panel" style="display:none;">
+    <table class="table" id="siteTable">
+      <thead>
+        <tr>
+          <th>站点</th>
+          <th>coverage</th>
+          <th>observed_count</th>
+          <th>sitemap</th>
+          <th>companion 类型</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div id="detailViewPanel">
+    <div id="switcher" class="switcher"></div>
+    <div id="panel" class="panel"></div>
+  </div>
+</div>
+<script id="report-data-b64" type="text/plain">eyJzaXRlcyI6IFt7InNvdXJjZV9tZCI6ICJDOlxcVXNlcnNcXEFkbWluXFxEZXNrdG9wXFxjb2RleFxcY29kZXhfYWdlbnRfcHJvZHVjdF9pbmZvX3RlbXBsYXRlX3Byb1xcd29ya3RyZWVzXFwyMDI2MDcwOF9hbWF6b25fMjEwNTIwXFxyZXN1bHRcXHNpdGVfZGVsaXZlcnlfc3VtbWFyeS5tZCIsICJpbnB1dF9zaXRlIjogImFtYXpvbi5jb20iLCAiZWZmZWN0aXZlX29yaWdpbiI6ICJodHRwczovL3d3dy5hbWF6b24uY29tIiwgImNvbW1lcmNlX29yaWdpbiI6ICJodHRwczovL3d3dy5hbWF6b24uY29tIiwgInNjb3BlX3JlYXNvbiI6ICLnlKjmiLfnq5nngrkgYW1hem9uLmNvbSDnmoTmnInmlYjnlLXllYbor6bmg4XpobXkvY3kuo4gd3d3LmFtYXpvbi5jb23vvJvlrpjmlrkgc2l0ZW1hcCDmjqLmtYvkuI3lj6/nlKjvvIzmnIDnu4jkuqTku5jkv53mjIHlnKjlkIzkuIAgQW1hem9uIG9yaWdpbu+8jOW5tuS9v+eUqOWPr+WkjeeOsOeahOaQnOe0oi/mppzljZXliJfooajpobXmir3lj5bjgIIiLCAiY292ZXJhZ2UiOiAicGFydGlhbCIsICJvYnNlcnZlZF9jb3VudCI6IDU0LCAic2l0ZW1hcCI6ICJodHRwczovL3d3dy5hbWF6b24uY29tL3M/az13aXJlbGVzcyttb3VzZSIsICJjb21wYW5pb24iOiB7InR5cGUiOiAibGlzdF9jdXN0b21fY29kZSIsICJ2YWx1ZSI6ICJpbXBvcnQgcmVcbmltcG9ydCBodG1sXG5pbXBvcnQgdXJsbGliLnBhcnNlXG5cbkJBU0UgPSBcImh0dHBzOi8vd3d3LmFtYXpvbi5jb21cIlxuREVGQVVMVF9TRUVEUyA9IFtcbiAgICBcImh0dHBzOi8vd3d3LmFtYXpvbi5jb20vcz9rPXdpcmVsZXNzK21vdXNlXCIsXG4gICAgXCJodHRwczovL3d3dy5hbWF6b24uY29tL0Jlc3QtU2VsbGVycy96Z2JzXCIsXG5dXG5cblxuZGVmIF9oZWFkZXJzKCk6XG4gICAgcmV0dXJuIHtcbiAgICAgICAgXCJVc2VyLUFnZW50XCI6IFwiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzEyNS4wLjAuMCBTYWZhcmkvNTM3LjM2XCIsXG4gICAgICAgIFwiQWNjZXB0XCI6IFwidGV4dC9odG1sLGFwcGxpY2F0aW9uL3hodG1sK3htbCxhcHBsaWNhdGlvbi94bWw7cT0wLjksaW1hZ2UvYXZpZixpbWFnZS93ZWJwLCovKjtxPTAuOFwiLFxuICAgICAgICBcIkFjY2VwdC1MYW5ndWFnZVwiOiBcImVuLVVTLGVuO3E9MC45XCIsXG4gICAgICAgIFwiQ2FjaGUtQ29udHJvbFwiOiBcIm5vLWNhY2hlXCIsXG4gICAgICAgIFwiUHJhZ21hXCI6IFwibm8tY2FjaGVcIixcbiAgICB9XG5cblxuZGVmIF9yZXNwb25zZV90ZXh0KHJzcCk6XG4gICAgcmF3ID0gZ2V0YXR0cihyc3AsIFwiY29udGVudFwiLCBOb25lKSBvciBiXCJcIlxuICAgIGlmIHJhdzpcbiAgICAgICAgdHJ5OlxuICAgICAgICAgICAgcmV0dXJuIHJhdy5kZWNvZGUoXCJ1dGYtOFwiLCBcImlnbm9yZVwiKVxuICAgICAgICBleGNlcHQgRXhjZXB0aW9uOlxuICAgICAgICAgICAgcGFzc1xuICAgIHJldHVybiBnZXRhdHRyKHJzcCwgXCJ0ZXh0XCIsIFwiXCIpIG9yIFwiXCJcblxuXG5kZWYgX2NsZWFuX3VybCh1cmwpOlxuICAgIHZhbHVlID0gaHRtbC51bmVzY2FwZShzdHIodXJsIG9yIFwiXCIpKS5zdHJpcCgpXG4gICAgaWYgbm90IHZhbHVlOlxuICAgICAgICByZXR1cm4gTm9uZVxuICAgIHZhbHVlID0gdXJsbGliLnBhcnNlLnVybGpvaW4oQkFTRSwgdmFsdWUpXG4gICAgcGFyc2VkID0gdXJsbGliLnBhcnNlLnVybHNwbGl0KHZhbHVlKVxuICAgIGhvc3QgPSAocGFyc2VkLmhvc3RuYW1lIG9yIFwiXCIpLmxvd2VyKClcbiAgICBpZiBob3N0IG5vdCBpbiB7XCJhbWF6b24uY29tXCIsIFwid3d3LmFtYXpvbi5jb21cIn06XG4gICAgICAgIHJldHVybiBOb25lXG4gICAgbWF0Y2ggPSByZS5zZWFyY2goclwiLyg/OmRwfGdwL3Byb2R1Y3QpLyhbQS1aMC05XXsxMH0pXCIsIHBhcnNlZC5wYXRoLCByZS5JKVxuICAgIGlmIG5vdCBtYXRjaDpcbiAgICAgICAgcmV0dXJuIE5vbmVcbiAgICBhc2luID0gbWF0Y2guZ3JvdXAoMSkudXBwZXIoKVxuICAgIHJldHVybiBcImh0dHBzOi8vd3d3LmFtYXpvbi5jb20vZHAvXCIgKyBhc2luXG5cblxuZGVmIF9kZXRhaWxfdXJpc19mcm9tX2h0bWwodGV4dCk6XG4gICAgZm91bmQgPSBbXVxuICAgIHBhdHRlcm5zID0gW1xuICAgICAgICByJ2hyZWY9W1wiXFwnXShbXlwiXFwnXSovKD86ZHB8Z3AvcHJvZHVjdCkvW0EtWjAtOV17MTB9W15cIlxcJ10qKVtcIlxcJ10nLFxuICAgICAgICByJ1tcIlxcJ10oaHR0cHM/Oi8vd3d3XFwuYW1hem9uXFwuY29tLyg/OlteXCJcXCddKi8pPyg/OmRwfGdwL3Byb2R1Y3QpL1tBLVowLTldezEwfVteXCJcXCddKilbXCJcXCddJyxcbiAgICAgICAgcicvKD86ZHB8Z3AvcHJvZHVjdCkvKFtBLVowLTldezEwfSknLFxuICAgIF1cbiAgICBmb3IgcGF0dGVybiBpbiBwYXR0ZXJuc1s6Ml06XG4gICAgICAgIGZvciBtYXRjaCBpbiByZS5maW5kaXRlcihwYXR0ZXJuLCB0ZXh0LCByZS5JKTpcbiAgICAgICAgICAgIHVybCA9IF9jbGVhbl91cmwobWF0Y2guZ3JvdXAoMSkpXG4gICAgICAgICAgICBpZiB1cmw6XG4gICAgICAgICAgICAgICAgZm91bmQuYXBwZW5kKHVybClcbiAgICBmb3IgbWF0Y2ggaW4gcmUuZmluZGl0ZXIocGF0dGVybnNbMl0sIHRleHQsIHJlLkkpOlxuICAgICAgICB1cmwgPSBcImh0dHBzOi8vd3d3LmFtYXpvbi5jb20vZHAvXCIgKyBtYXRjaC5ncm91cCgxKS51cHBlcigpXG4gICAgICAgIGZvdW5kLmFwcGVuZCh1cmwpXG4gICAgcmV0dXJuIGZvdW5kXG5cblxuZGVmIF9ydW50aW1lX3NlZWRfdXJscygpOlxuICAgIHNlZWRzID0gW11cbiAgICBmb3IgbmFtZSBpbiAoXCJsaXN0X3VybFwiLCBcInVybFwiKTpcbiAgICAgICAgdHJ5OlxuICAgICAgICAgICAgdmFsdWUgPSBnbG9iYWxzKCkuZ2V0KG5hbWUpXG4gICAgICAgIGV4Y2VwdCBFeGNlcHRpb246XG4gICAgICAgICAgICB2YWx1ZSA9IE5vbmVcbiAgICAgICAgaWYgaXNpbnN0YW5jZSh2YWx1ZSwgc3RyKSBhbmQgdmFsdWUuc3RhcnRzd2l0aChcImh0dHBcIik6XG4gICAgICAgICAgICBzZWVkcy5hcHBlbmQodmFsdWUpXG4gICAgdHJ5OlxuICAgICAgICB2YWx1ZSA9IGdldGF0dHIocnNwLCBcInVybFwiLCBOb25lKVxuICAgIGV4Y2VwdCBFeGNlcHRpb246XG4gICAgICAgIHZhbHVlID0gTm9uZVxuICAgIGlmIGlzaW5zdGFuY2UodmFsdWUsIHN0cikgYW5kIHZhbHVlLnN0YXJ0c3dpdGgoXCJodHRwXCIpOlxuICAgICAgICBzZWVkcy5hcHBlbmQodmFsdWUpXG4gICAgc2VlZHMuZXh0ZW5kKERFRkFVTFRfU0VFRFMpXG4gICAgb3V0ID0gW11cbiAgICBzZWVuID0gc2V0KClcbiAgICBmb3Igc2VlZCBpbiBzZWVkczpcbiAgICAgICAgaWYgc2VlZCBpbiBzZWVuOlxuICAgICAgICAgICAgY29udGludWVcbiAgICAgICAgc2Vlbi5hZGQoc2VlZClcbiAgICAgICAgb3V0LmFwcGVuZChzZWVkKVxuICAgIHJldHVybiBvdXRcblxuXG5kZXRhaWxfdXJpcyA9IFtdXG5zZWVuID0gc2V0KClcbmhlYWRlcnMgPSBfaGVhZGVycygpXG5cbmZvciBzZWVkIGluIF9ydW50aW1lX3NlZWRfdXJscygpOlxuICAgIHRyeTpcbiAgICAgICAgcGFnZV9yc3AgPSBjb21tb25fcmVxdWVzdChcImdldFwiLCBzZWVkLCBoZWFkZXJzPWhlYWRlcnMsIHRpbWVvdXQ9NDApXG4gICAgICAgIHBhZ2VfdGV4dCA9IF9yZXNwb25zZV90ZXh0KHBhZ2VfcnNwKVxuICAgIGV4Y2VwdCBFeGNlcHRpb246XG4gICAgICAgIHBhZ2VfdGV4dCA9IFwiXCJcbiAgICBpZiBub3QgcGFnZV90ZXh0IG9yIHJlLnNlYXJjaChyXCJjYXB0Y2hhfGF1dG9tYXRlZCBhY2Nlc3N8cm9ib3QgY2hlY2tcIiwgcGFnZV90ZXh0LCByZS5JKTpcbiAgICAgICAgY29udGludWVcbiAgICBmb3IgdXJpIGluIF9kZXRhaWxfdXJpc19mcm9tX2h0bWwocGFnZV90ZXh0KTpcbiAgICAgICAgaWYgdXJpIGluIHNlZW46XG4gICAgICAgICAgICBjb250aW51ZVxuICAgICAgICBzZWVuLmFkZCh1cmkpXG4gICAgICAgIGRldGFpbF91cmlzLmFwcGVuZCh1cmkpXG4gICAgaWYgbGVuKGRldGFpbF91cmlzKSA+PSA4MDpcbiAgICAgICAgYnJlYWtcblxuc2NyaXB0X3JlcyA9IHtcImRldGFpbF91cmlzXCI6IGRldGFpbF91cmlzfSJ9LCAic2FtcGxlX2RldGFpbF91cmlzIjogWyJodHRwczovL3d3dy5hbWF6b24uY29tL2RwL0IwMDRZQVZGOEkiLCAiaHR0cHM6Ly93d3cuYW1hem9uLmNvbS9kcC9CMDdDTVM1UTZQIiwgImh0dHBzOi8vd3d3LmFtYXpvbi5jb20vZHAvQjBIMTVYSjUxQiIsICJodHRwczovL3d3dy5hbWF6b24uY29tL2RwL0IwODdaNVdESjIiLCAiaHR0cHM6Ly93d3cuYW1hem9uLmNvbS9kcC9CMEY1SFBDTEdCIl0sICJzYW1wbGVfZGV0YWlsX3JlYXNvbnMiOiBbIuagt+acrOivpuaDhemhteadpeiHquW9k+WJjeS7u+WKoeenjeWtkCBQRFDvvIxTdGFnZTMgbGl2ZSBjaGVja2VyIOW3sumqjOivgeagh+mimOOAgeS7t+agvOOAgeWbvueJh+OAgeivhOS7t+WSjCBTS1Ug5a2X5q6144CCIiwgIuagt+acrOivpuaDhemhteadpeiHquaQnOe0ouWIl+ihqOmhteaKveWPlu+8jFVSTCDljIXlkKvmoIflh4YgL2RwL0FTSU4g6K+m5oOF6aG157uT5p6E44CCIiwgIuagt+acrOivpuaDhemhteadpeiHquaQnOe0ouWIl+ihqOmhteaKveWPlu+8jFVSTCDljIXlkKvmoIflh4YgL2RwL0FTSU4g6K+m5oOF6aG157uT5p6E44CCIiwgIuagt+acrOivpuaDhemhteadpeiHquaQnOe0ouWIl+ihqOmhteaKveWPlu+8jFVSTCDljIXlkKvmoIflh4YgL2RwL0FTSU4g6K+m5oOF6aG157uT5p6E44CCIiwgIuagt+acrOivpuaDhemhteadpeiHquaQnOe0ouWIl+ihqOmhteaKveWPlu+8jFVSTCDljIXlkKvmoIflh4YgL2RwL0FTSU4g6K+m5oOF6aG157uT5p6E44CCIl0sICJwcm9jZXNzX25vdGVzIjogWyLnrKzkuIDms6LmjqLmtYsgcm9ib3RzLnR4dCDmiJDlip/vvIzkvYYgcm9ib3RzIOacquWjsOaYjiBzaXRlbWFw77ybL3NpdGVtYXAueG1sIOS4jiAvc2l0ZW1hcF9pbmRleC54bWwg6L+U5ZueIEhUTUwvNTAw77yM5pyq5b6X5Yiw5Y+v55u05o6l6YCS5b2S55qE5a6Y5pa55Lqn5ZOBIHNpdGVtYXDjgIIiLCAi5YiX6KGo6aG15oqT5Y+W6aqM6K+B5LqGIGh0dHBzOi8vd3d3LmFtYXpvbi5jb20vcz9rPXdpcmVsZXNzK21vdXNlIOWSjCBodHRwczovL3d3dy5hbWF6b24uY29tL0Jlc3QtU2VsbGVycy96Z2JzIOWdh+iDvei/lOWbnuecn+WuniAvZHAvQVNJTiDor6bmg4XpobXpk77mjqXjgIIiLCAibGlzdF9jdXN0b21fY29kZSDnvJbor5HpgJrov4fvvIzlubblnKggYXV0aG9yaW5nLXRpbWUg5omn6KGM5rWL6K+V5Lit6L+U5ZueIDU0IOS4quWOu+mHjeivpuaDhemhtSBVUkzjgIIiLCAiU3RhZ2UzIOWvueenjeWtkOivpuaDhemhteaJp+ihjCBsaXZlIGNoZWNrZXLvvIzpqozor4HllYblk4HmoIfpopjjgIHku7fmoLzjgIHluIHnp43jgIHlm77niYfjgIHlsZ7mgKfjgIFTS1XjgIHor4TliIblkozor4TorrrmlbDlnYfpgJrov4cgc2NoZW1hIOagoemqjOOAgiIsICLnrKzkuozms6LkuI7nrKzkuInms6LmnKrop6blj5HvvJrpppbova7lt7Llj5HnjrDnnJ/lrp7or6bmg4XpobUgVVJM77yM5L2G5a6Y5pa5IHNpdGVtYXAg5LiN5Y+v55So77yM5omA5Lul6KaG55uW5qCH6K6w5Li6IHBhcnRpYWzjgIIiXSwgIl9tZF9wYXRoIjogIkM6XFxVc2Vyc1xcQWRtaW5cXERlc2t0b3BcXGNvZGV4XFxjb2RleF9hZ2VudF9wcm9kdWN0X2luZm9fdGVtcGxhdGVfcHJvXFx3b3JrdHJlZXNcXDIwMjYwNzA4X2FtYXpvbl8yMTA1MjBcXHJlc3VsdFxcc2l0ZV9kZWxpdmVyeV9zdW1tYXJ5Lm1kIn1dLCAib3ZlcnZpZXciOiB7InRvdGFsX3NpdGVzIjogMSwgImJ5X2NvdmVyYWdlIjogeyJvayI6IDAsICJwYXJ0aWFsIjogMSwgIm5vbmUiOiAwLCAiYmxvY2tlZCI6IDAsICJkZWFkIjogMCwgImFtYiI6IDB9LCAidG90YWxfb2JzZXJ2ZWRfY291bnQiOiA1NH0sICJwYXRjaF9sYWJlbCI6ICIifQ==</script>
+<script>
+const PAYLOAD = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(document.getElementById('report-data-b64').textContent.trim()), c => c.charCodeAt(0))));
+const DATA = PAYLOAD.sites || [];
+const OVERVIEW = PAYLOAD.overview || {};
+const COLORS = { "ok":"#0ba63e", "partial":"#008af7", "none":"#ff8a00", "blocked":"#6b7280", "dead":"#e60023", "amb":"#7c3aed", "unknown":"#9ca3af" };
+let active = 0;
+let failOnly = false;
+let viewMode = "detail";
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+}
+function coverageBadge(cov) {
+  const color = COLORS[cov] || "#9ca3af";
+  return '<span class="badge" style="background:' + color + '">' + esc(cov || "unknown") + '</span>';
+}
+function renderOverview() {
+  const cards = document.getElementById("overviewCards");
+  const ov = OVERVIEW;
+  const items = [
+    { num: ov.total_sites || 0, lbl: "站点总数" },
+    { num: (ov.by_coverage && ov.by_coverage.ok) || 0, lbl: "ok", color: COLORS.ok },
+    { num: (ov.by_coverage && ov.by_coverage.partial) || 0, lbl: "partial", color: COLORS.partial },
+    { num: (ov.by_coverage && ov.by_coverage.none) || 0, lbl: "none", color: COLORS.none },
+    { num: (ov.by_coverage && ov.by_coverage.blocked) || 0, lbl: "blocked", color: COLORS.blocked },
+    { num: (ov.by_coverage && ov.by_coverage.dead) || 0, lbl: "dead", color: COLORS.dead },
+    { num: (ov.by_coverage && ov.by_coverage.amb) || 0, lbl: "amb", color: COLORS.amb },
+    { num: ov.total_observed_count || 0, lbl: "总 observed_count" },
+  ];
+  cards.innerHTML = items.map(it =>
+    '<div class="overview-card">' +
+    '<div class="num"' + (it.color ? ' style="color:' + it.color + '"' : '') + '>' + it.num + '</div>' +
+    '<div class="lbl">' + esc(it.lbl) + '</div>' +
+    '</div>'
+  ).join("");
+}
+function renderTable() {
+  const tbody = document.querySelector("#siteTable tbody");
+  tbody.innerHTML = "";
+  DATA.forEach((d) => {
+    if (failOnly && !["blocked","dead","amb","none"].includes(d.coverage)) return;
+    const comp = d.companion || {};
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      "<td>" + esc(d.input_site || "") + "</td>" +
+      "<td>" + coverageBadge(d.coverage) + "</td>" +
+      "<td>" + esc(d.observed_count == null ? "" : d.observed_count) + "</td>" +
+      "<td>" + esc(d.sitemap || "") + "</td>" +
+      "<td>" + esc(comp.type || "") + "</td>";
+    tbody.appendChild(tr);
+  });
+}
+function renderSwitcher() {
+  const wrap = document.getElementById("switcher"); wrap.innerHTML = "";
+  DATA.forEach((d, i) => {
+    if (failOnly && !["blocked","dead","amb","none"].includes(d.coverage)) return;
+    const b = document.createElement("button");
+    b.className = "site-btn" + (i === active ? " active" : "");
+    b.style.background = COLORS[d.coverage] || "#6b7280";
+    b.textContent = d.input_site || d.effective_origin || ("site-" + (i + 1));
+    b.onclick = () => { active = i; renderPanel(); };
+    wrap.appendChild(b);
+  });
+}
+function sampleLinks(items, reasons) {
+  return '<ul class="sample-links">' + (items || []).map((u, i) => {
+    const url = String(u == null ? "" : u);
+    const reason = String((reasons || [])[i] || "");
+    const note = reason ? '<div class="sample-note">' + esc(reason) + '</div>' : "";
+    return '<li><a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(url) + '</a>' + note + '</li>';
+  }).join("") + "</ul>";
+}
+function listItems(items) {
+  return "<ul>" + (items || []).map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+}
+function renderPanel() {
+  const d = DATA[active];
+  if (!d) return;
+  const comp = d.companion || {};
+  const asCode = comp.type === "list_custom_code";
+  const companionHtml = asCode
+    ? '<div class="code-box collapsed" id="codeBox"><div class="code-tools"><button class="code-toggle" id="toggleCode">展开 list_custom_code</button><button id="copyCode">复制 list_custom_code</button></div><pre>' + esc(comp.value || "") + "</pre></div>"
+    : '<div class="value">' + esc(comp.value || "") + "</div>";
+  document.getElementById("panel").innerHTML =
+    '<div class="site-head"><h2>' + esc(d.input_site || "") + '</h2>' + coverageBadge(d.coverage) + '</div>' +
+    '<div class="grid">' +
+    '<div class="label">effective_origin</div><div class="value">' + esc(d.effective_origin || "") + '</div>' +
+    '<div class="label">commerce_origin</div><div class="value">' + esc(d.commerce_origin || "") + '</div>' +
+    '<div class="label">scope_reason</div><div class="value">' + esc(d.scope_reason || "") + '</div>' +
+    '<div class="label">sitemap</div><div class="value">' + esc(d.sitemap || "") + '</div>' +
+    '<div class="label">' + esc(comp.type || "companion") + '</div>' + companionHtml +
+    '<div class="label">sample_detail_uris</div><div class="value">' + sampleLinks(d.sample_detail_uris, d.sample_detail_reasons) + '</div>' +
+    '<div class="label">process_notes</div><div class="value">' + listItems(d.process_notes) + '</div>' +
+    '<div class="label">coverage</div><div class="value">' + coverageBadge(d.coverage) + (d.coverage_note ? " (" + esc(d.coverage_note) + ")" : "") + '</div>' +
+    '<div class="label">observed_count</div><div class="value">' + esc(d.observed_count == null ? "" : d.observed_count) + '</div>' +
+    "</div>";
+  const toggle = document.getElementById("toggleCode");
+  if (toggle) {
+    toggle.onclick = () => {
+      const box = document.getElementById("codeBox");
+      const collapsed = box.classList.toggle("collapsed");
+      toggle.textContent = collapsed ? "展开 list_custom_code" : "收起 list_custom_code";
+    };
+  }
+  const copy = document.getElementById("copyCode");
+  if (copy) {
+    copy.onclick = async () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = comp.value || "";
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch (e) {}
+    };
+  }
+}
+function renderAll() {
+  renderOverview();
+  renderTable();
+  if (viewMode === "detail") {
+    document.getElementById("tableViewPanel").style.display = "none";
+    document.getElementById("detailViewPanel").style.display = "";
+    renderSwitcher();
+    renderPanel();
+  } else {
+    document.getElementById("tableViewPanel").style.display = "";
+    document.getElementById("detailViewPanel").style.display = "none";
+  }
+}
+document.getElementById("showAll").onclick = () => { failOnly = false; renderAll(); };
+document.getElementById("failOnly").onclick = () => { failOnly = true; renderAll(); };
+document.getElementById("tableView").onclick = () => { viewMode = "table"; renderAll(); };
+document.getElementById("detailView").onclick = () => { viewMode = "detail"; renderAll(); };
+renderAll();
+</script>
+</body>
+</html>

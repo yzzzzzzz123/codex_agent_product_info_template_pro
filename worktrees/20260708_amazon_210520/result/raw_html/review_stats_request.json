@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "url": "https://www.amazon.com/Logitech-Wireless-Mouse-M185-Swift/dp/B004YAVF8I",
+  "provider": "dom",
+  "selectors": [
+    "#acrPopover",
+    "#acrCustomerReviewText",
+    "#reviewsMedley"
+  ]
+}

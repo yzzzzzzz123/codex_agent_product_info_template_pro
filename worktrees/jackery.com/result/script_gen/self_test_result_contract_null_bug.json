@@ -1,0 +1,77 @@
+{
+  "case_dir": "/Users/yuzhizheng/Desktop/codex/codex_agent_product_info_template_pro/worktrees/jackery.com/result/script_gen",
+  "checks": {
+    "case_files": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "info": [
+        "optional file not present: raw_html/static_page.html",
+        "optional file not present: fixtures"
+      ],
+      "error_count": 0,
+      "warning_count": 0,
+      "info_count": 2
+    },
+    "spu_fields": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "info": [],
+      "error_count": 0,
+      "warning_count": 0,
+      "info_count": 0
+    },
+    "price_currency": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "info": [],
+      "error_count": 0,
+      "warning_count": 0,
+      "info_count": 0
+    },
+    "sku_fields": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "info": [],
+      "error_count": 0,
+      "warning_count": 0,
+      "info_count": 0
+    },
+    "review_stats": {
+      "ok": false,
+      "errors": [
+        "source_score is not numeric: None",
+        "source_cmms is not an int: None"
+      ],
+      "warnings": [],
+      "info": [],
+      "error_count": 2,
+      "warning_count": 0,
+      "info_count": 0
+    },
+    "empty_sku_collapse": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "info": [],
+      "error_count": 0,
+      "warning_count": 0,
+      "info_count": 0
+    },
+    "spu_sku_consistency": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "info": [],
+      "error_count": 0,
+      "warning_count": 0,
+      "info_count": 0
+    }
+  },
+  "total_errors": 2,
+  "total_warnings": 0,
+  "overall_ok": false
+}
