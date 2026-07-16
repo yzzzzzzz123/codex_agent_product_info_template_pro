@@ -34,3 +34,18 @@ Thumbs.db
 *.zip
 
 .Python
+
+# Local inputs and generated run artifacts
+/input/
+/inputs/
+/output/
+/outputs/
+/result/
+/results/
+/worktree/
+/worktrees/
+/uploads/
+/downloads/
+/tmp/
+/temp/
+/.cache/

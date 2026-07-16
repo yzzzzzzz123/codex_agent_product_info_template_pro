@@ -1,9 +1,0 @@
-{
-  "provider": "dom",
-  "provider_detection_source": "Amazon PDP visible averageCustomerReviews block (#acrPopover, #acrCustomerReviewText, #reviewsMedley)",
-  "review_product_id": "B004YAVF8I",
-  "review_product_id_source": "ASIN from PDP URL and data-csa-c-asin",
-  "score_count_same_provider": true,
-  "visible_widget_score": 4.5,
-  "visible_widget_review_count": 42764
-}
