@@ -1,125 +1,75 @@
-# codex_agent_product_info_template_pro
+# shopees_ugreen_topsales_scraper
 
-从截图还原的 Codex Agent 商品信息采集模板项目。
+这是一个由 Codex Skill 驱动的专用项目，只处理 Shopee Philippines 的 UGREEN
+官方店铺 Top Sales：遍历全部列表页、逐个进入全部商品详情页，并把商品链接、价格、
+月销、SKU、主图和副图发布为唯一一份 Excel。
 
-## 项目结构
+固定输出：
 
 ```text
-codex_agent_product_info_template_pro/
-├── docs/environment_setup.md             # 环境搭建指南
-├── input/dataset_url_template.json       # 数据集URL模板
-├── pyproject.toml
-├── AGENTS.md                             # Agent架构文档
-├── README.md
-└── skills/
-    ├── playwright-cli/                   # 浏览器自动化 skill
-    │   ├── SKILL.md
-    │   ├── scripts/
-    │   │   ├── proxy-access.js
-    │   │   └── fetch_html_with_fallback.py
-    │   └── references/
-    ├── site-seed-discovery/              # 种子URL发现 skill
-    │   ├── SKILL.md
-    │   ├── scripts/
-    │   │   ├── discover_seed_urls.py
-    │   │   └── update_dataset_template.py
-    │   └── references/
-    ├── sitemap-list-discovery/           # Stage4 列表发现 skill
-    │   ├── SKILL.md
-    │   └── references/
-    ├── spu-code-embed/                   # Stage3 SPU代码嵌入 skill
-    │   ├── SKILL.md
-    │   ├── scripts/
-    │   │   ├── final_code_check.py
-    │   │   ├── final_code_check_offline.py
-    │   │   └── final_render_html.py
-    │   └── references/
-    └── taojin_v3_crawl_skill/            # 主爬取 skill (v3)
-        ├── SKILL.md
-        ├── assets/
-        │   ├── run_prompt_template.md
-        │   └── self_test_config_template.jsonc
-        ├── scripts/
-        │   ├── worktree_cli.py
-        │   ├── postprocess_raw_product.py
-        │   ├── stage2_self_test.py
-        │   ├── get_sku_id_spu_id.py
-        │   ├── eval_spu_extraction.py
-        │   ├── loose_eval_spu_extraction.py
-        │   ├── render_stage4_site_summary.py
-        │   ├── render_stage4_batch_report.py
-        │   ├── assemble_html_report.py
-        │   └── run_batch.py
-        └── references/
-            ├── agent_responsibilities.md
-            ├── web_analysis_playbook.md
-            ├── human_operation_flow.md
-            ├── stage2_anchor_schema.md
-            ├── stage4_html_report_template.html
-            ├── raw_product_schema.jsonc
-            ├── target_product_schema.jsonc
-            ├── extraction_result_schema.json
-            ├── extraction_result_example.jsonc
-            ├── eval_output_schema.json
-            ├── worktree_operations.md
-            └── ...
+result/ugreen_topsales.xlsx
 ```
 
-## single_spu_task
+## 使用方式
 
-### 入门: taojin v3 (推荐)
+在 Codex 中调用：
 
-`skills/taojin_v3_crawl_skill` 是 v2 派生的端到端爬取工作流（Stage1 采集、Stage2 解析、Stage3 嵌入，可选 Stage4 列表发现）。保持 v2 的 Stage1/Stage2 数据契约，将 Stage2-3 委托给下游代理，浏览器回退委托给 `skills/playwright-cli`，当任务启用列表发现时进入可选的 Stage4，直接调用 `skills/sitemap-list-discovery` 进行单站点列表发现。
+```text
+使用 $shopee-ugreen-topsales 执行今天的完整抓取
+```
 
-- 技能入口: `skills/taojin_v3_crawl_skill/SKILL.md`
-- 工作树操作参考: `skills/taojin_v3_crawl_skill/references/worktree_operations.md`
-- worktree CLI: `./env/.venv/bin/python skills/taojin_v3_crawl_skill/scripts/worktree_cli.py --help`
-- Stage4 站点摘要: `./env/.venv/bin/python skills/taojin_v3_crawl_skill/scripts/render_stage4_site_summary.py ...`
-- Stage4 批量报告: `./env/.venv/bin/python skills/taojin_v3_crawl_skill/scripts/render_stage4_batch_report.py ...`
+也可以只分析已有结果：
 
-### 环境搭建
+```text
+使用 $shopee-ugreen-topsales 分析现有 Excel 的价格和月销分布，不重新抓取
+```
 
-详见 [docs/environment_setup.md](docs/environment_setup.md)。
+Skill 会先区分“只抓取 / 只分析 / 抓取后分析”。AI 负责选择模式、创建或复用当天
+Git worktree、运行与监控、校验结果以及后续表格分析；分页、PDP 身份校验、SKU/图片
+解析和 Excel 原子发布由 Skill 内的确定性脚本完成。所有面向用户的提示、进度与分析
+默认使用中文。
 
-- Node.js / npm (推荐使用 nvm 管理版本)
-- Codex CLI
-- ripgrep
-- playwright-cli skill
-- xvfb (Linux 服务器环境)
-- `env/` 目录（Python 虚拟环境、Node 环境、Playwright 浏览器）
+完整工作流与停止条件见
+[`skills/shopee-ugreen-topsales/SKILL.md`](skills/shopee-ugreen-topsales/SKILL.md)。
 
-`playwright-cli` skill 需要 Python 3.8+ 和 Playwright Python 库，安装在 `env/.venv`；Node 环境的 Playwright 安装在 `env/node`。
+## 环境
 
-### Batch Input
+- Python 3.10+
+- macOS Google Chrome
+- 可正常访问 Shopee Philippines 的本机网络
 
-数据集在 `input/dataset_url_template.json` 中按站点配置（数组格式）。
-
-每个条目包含：
-
-- `site_domain`: 站点域名（如 "www.example.com"）
-- `spu_uris`: SPU URL 列表
-- `type`: 任务类型，如 `"with_review_stats"`（启用时提取 `source_score` 和 `source_cmms`）
-- `extra_tasks`: 额外任务，如 `["list_discovery"]`（启用时调用列表发现，产出 `site_delivery_summary.md`）
-
-组合模式:
-
-- 基础模式: 默认（无 review stats，无 list discovery）
-- 仅 review: `type: "with_review_stats"`
-- 仅 list discovery: `extra_tasks: ["list_discovery"]`
-- 全量模式: `type: "with_review_stats"` + `extra_tasks: ["list_discovery"]`
-
-## 环境搭建
-
-详见 [docs/environment_setup.md](docs/environment_setup.md)。
-
-## 提取说明
-
-本项目代码从截图中 OCR/视觉提取还原。
-
-## 快速验收
+初始化一次：
 
 ```bash
-node --check skills/playwright-cli/scripts/proxy-access.js
-./env/.venv/bin/python skills/playwright-cli/scripts/fetch_html_with_fallback.py  # 需先搭建 env
-./env/.venv/bin/python skills/taojin_v3_crawl_skill/scripts/worktree_cli.py --help
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
 ```
+
+不需要安装 Playwright 自带 Chromium：运行时固定使用本机 Google Chrome。每次运行都
+创建独立临时 profile，只复制最近使用的本机 profile 中必要会话状态，绝不直接启动或
+修改原 profile，结束后删除临时副本。UA、语言、时区、屏幕等环境指纹全部由 Skill 内
+的 JavaScript 初始化注入，不通过项目代理或 Playwright context 伪装。Chrome 不配置
+自定义代理或代理凭据，按默认行为使用 macOS 系统代理。
+
+## 每日 worktree
+
+每天按上海时区使用：
+
+```text
+worktrees/YYYYMMDD_ugreen_topsales
+```
+
+当天路径会安全复用，不会创建随机后缀。主工作树和当天 worktree 必须干净并处于同一
+已提交 `HEAD`；项目不会自动 commit、stash、reset、clean 或删除 worktree。因此，
+代码改写完成后应先由用户审阅并提交，再启动第一次每日任务。
+
+抓取始终从当天 worktree 的脚本启动，但最终结果原子发布回主项目的固定 `result/`
+路径。失败不会覆盖上一份有效工作簿。
+
+## 输出约束
+
+工作簿固定包含 `商品汇总`、`SKU明细`、`图片明细`、`抓取核验` 四张表。ID 以文本
+写入；页面未展示月销时留空并标记为未知，绝不按 `0` 推断。
+
+`result/` 只允许存在 `ugreen_topsales.xlsx`。项目不生成 HTML、JSON、截图、页面
+快照、证据包或其他中间文件，也不包含或配置任何网络代理。

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shopee UGREEN Top Sales"
+  short_description: "每日抓取 UGREEN Top Sales 并分析 Excel"
+  default_prompt: "使用 $shopee-ugreen-topsales 刷新今天的 UGREEN Top Sales 全量工作簿。所有面向用户的进度、错误、结论和分析均使用中文；只有请求中明确包含分析时才执行分析。"

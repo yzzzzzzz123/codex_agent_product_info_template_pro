@@ -1,51 +1,24 @@
-*.pyc
 __pycache__/
+*.py[cod]
 *.egg-info/
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-node_modules/
-dist/
-build/
-
+.venv/
 venv/
 env/
-.venv*/
 
-*.log
+build/
+dist/
+
 .DS_Store
-Thumbs.db
-
-*.swp
-*.swo
-*~
-
-.vscode/
 .idea/
-.project/
-.pydevproject/
+.vscode/
+*.log
 
-*.egg
-*.whl
-*.tar.gz
-*.zip
+# 抓取结果由程序生成，不纳入版本控制。
+/result/*
 
-.Python
-
-# Local inputs and generated run artifacts
-/input/
-/inputs/
-/output/
-/outputs/
-/result/
-/results/
-/worktree/
+# 每日抓取使用独立 Git worktree；目录本身不纳入主工作树状态。
 /worktrees/
-/uploads/
-/downloads/
-/tmp/
-/temp/
-/.cache/
