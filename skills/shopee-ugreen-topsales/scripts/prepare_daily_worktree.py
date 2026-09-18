@@ -200,7 +200,7 @@ def _prepare_locked(root: Path, value: str | None) -> dict[str, object]:
         "worktree_head": daily_head,
         "python": str(python),
         "runner": str(runner),
-        "output": str(root / "result/ugreen_topsales.xlsx"),
+        "output": str(worktree / "result/ugreen_topsales.xlsx"),
     }
 
 

@@ -9,8 +9,9 @@ description = "Shopee Philippines UGREEN Top Sales product scraper"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "playwright>=1.55,<2",
-    "openpyxl>=3.1,<4",
+    "playwright==1.63.0",
+    "openpyxl==3.1.5",
+    "lxml==6.1.3",
 ]
 
 [tool.setuptools]
