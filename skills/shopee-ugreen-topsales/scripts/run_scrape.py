@@ -17,6 +17,7 @@ from typing import Sequence
 from zoneinfo import ZoneInfo
 
 from excel import write_excel
+from browser_fingerprint import APPROVED_PROFILE_IDS
 from scraper import (
     DEFAULT_CHROME,
     BrowserConfig,
@@ -109,6 +110,12 @@ def _parser() -> argparse.ArgumentParser:
         default=10.0,
         metavar="SECONDS",
         help="详情完成验收并离开页面后的间隔秒数，至少 10 秒（默认：10）",
+    )
+    parser.add_argument(
+        "--browser-profile",
+        choices=("auto", *APPROVED_PROFILE_IDS),
+        default="auto",
+        help="每轮从已审阅配置中随机选择一次；也可指定配置，运行中不会切换",
     )
     parser.add_argument(
         "--chrome-executable",
@@ -290,6 +297,7 @@ async def _run(args: argparse.Namespace) -> Path | dict:
         headless=bool(args.headless),
         detail_shards=args.detail_shards,
         chrome_executable=args.chrome_executable.expanduser(),
+        browser_profile=args.browser_profile,
         list_interval_ms=round(args.list_interval_seconds * 1_000),
         detail_interval_ms=round(args.detail_interval_seconds * 1_000),
         historical_list_preflight=args.historical_list_preflight,

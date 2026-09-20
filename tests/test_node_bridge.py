@@ -18,6 +18,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "skills/shopee-ugreen-topsales/scripts"
 sys.path.insert(0, str(SCRIPTS))
 import scraper  # noqa: E402
+from test_scraper import FIXTURE_VERSION, fingerprint
+
+US_REGION = scraper.BrowserRegion("US", "en-US", ("en-US", "en"), "America/New_York")
 
 
 PRIVATE_MARKER = "OFFLINE_PRIVATE_FIXTURE_MUST_NOT_BE_LOGGED"
@@ -26,17 +29,19 @@ NODE_FIXTURE = str(Path(__file__).resolve())  # 仅验证存在性；启动已�
 
 def probe() -> dict:
     return {
+        **{key: value for key, value in fingerprint().items()
+           if key not in {"region", "profile_id"}},
         "webdriver_is_undefined": True,
-        "user_agent": scraper.CHROME_USER_AGENT,
+        "user_agent": fingerprint()["user_agent"],
         "language": "en-US",
-        "languages": ["en-US", "en", "zh-CN"],
+        "languages": ["en-US", "en"],
         "platform": "Win32",
         "vendor": "Google Inc.",
         "plugin_count": 5,
         "hardware_concurrency": 8,
         "device_memory": 8,
         "chrome_runtime_present": True,
-        "time_zone": "Asia/Manila",
+        "time_zone": "America/New_York",
         "screen_width": 1366,
         "screen_height": 768,
     }
@@ -90,6 +95,27 @@ def parsed_payload() -> dict:
 
 
 class NodeSubprocessTests(unittest.IsolatedAsyncioTestCase):
+    async def test_region_is_identical_in_node_options_and_init_script(self) -> None:
+        for region in (
+            US_REGION,
+            scraper.BrowserRegion("SG", "en-SG", ("en-SG", "en"), "Asia/Singapore"),
+            scraper.BrowserRegion("PH", "en-PH", ("en-PH", "en"), "Asia/Manila"),
+        ):
+            with self.subTest(country=region.country_code):
+                child = process(json.dumps(snapshot()).encode())
+                with (
+                    patch.dict(scraper.os.environ, {"PLAYWRIGHT_NODEJS_PATH": NODE_FIXTURE}, clear=True),
+                    patch.object(scraper.asyncio, "create_subprocess_exec", new=AsyncMock(return_value=child)),
+                ):
+                    await scraper._capture_node_list_snapshot(
+                        Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=region)
+                    )
+                request = json.loads(child.communicate.await_args.args[0])
+                self.assertEqual(request["region"], region.to_dict())
+                self.assertEqual(request["locale"], region.locale)
+                self.assertEqual(request["timezone_id"], region.timezone_id)
+                self.assertEqual(request["init_script"], scraper._stealth_script(fingerprint(region)))
+
     async def test_success_returns_snapshot_in_memory_without_printing_or_writing(self) -> None:
         expected = snapshot()
         child = process(json.dumps(expected).encode())
@@ -102,7 +128,7 @@ class NodeSubprocessTests(unittest.IsolatedAsyncioTestCase):
             redirect_stdout(captured_stdout), redirect_stderr(captured_stderr),
         ):
             result = await scraper._capture_node_list_snapshot(
-                Path("/unused-fixture-profile"), 0, scraper.BrowserConfig()
+                Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION)
             )
         self.assertEqual(result, expected)
         self.assertEqual(launch.await_args.args[0], NODE_FIXTURE)
@@ -114,7 +140,10 @@ class NodeSubprocessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["user_data_dir"], "/unused-fixture-profile")
         self.assertEqual(request["url"], scraper.STORE_PAGE_URL_TEMPLATE.format(page=0))
         self.assertEqual(request["chrome_executable"], str(scraper.DEFAULT_CHROME))
-        self.assertEqual(request["init_script"], scraper._stealth_script())
+        self.assertEqual(request["init_script"], scraper._stealth_script(fingerprint()))
+        self.assertEqual(request["region"], US_REGION.to_dict())
+        self.assertEqual(request["locale"], US_REGION.locale)
+        self.assertEqual(request["timezone_id"], US_REGION.timezone_id)
         self.assertEqual(request["playwright_module"], str(
             Path(scraper.playwright_package.__file__).resolve().parent / "driver/package"
         ))
@@ -140,7 +169,7 @@ class NodeSubprocessTests(unittest.IsolatedAsyncioTestCase):
             patch.object(scraper.asyncio, "create_subprocess_exec", new=AsyncMock(return_value=child)) as launch,
         ):
             await scraper._capture_node_list_snapshot(
-                Path("/unused-fixture-profile"), 2, scraper.BrowserConfig()
+                Path("/unused-fixture-profile"), 2, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION)
             )
         child_env = launch.await_args.kwargs["env"]
         self.assertFalse(any(key.lower() in {"http_proxy", "https_proxy", "all_proxy"} for key in child_env))
@@ -160,7 +189,7 @@ class NodeSubprocessTests(unittest.IsolatedAsyncioTestCase):
             patch.object(scraper.asyncio, "create_subprocess_exec", new=AsyncMock(return_value=child)) as launch,
         ):
             await scraper._capture_node_list_snapshot(
-                Path("/unused-fixture-profile"), 0, scraper.BrowserConfig()
+                Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION)
             )
         which.assert_called_once_with("node")
         self.assertEqual(launch.await_args.args[0], NODE_FIXTURE)
@@ -173,7 +202,7 @@ class NodeSubprocessTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(scraper.ScrapeError):
                 await scraper._capture_node_list_snapshot(
-                    Path("/unused-fixture-profile"), 0, scraper.BrowserConfig()
+                    Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION)
                 )
         launch.assert_not_awaited()
 
@@ -194,7 +223,7 @@ class NodeSubprocessTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     with self.assertRaises(scraper.ScrapeError) as raised:
                         await scraper._capture_node_list_snapshot(
-                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig()
+                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION)
                         )
                 self.assertNotIn(PRIVATE_MARKER, str(raised.exception))
                 self.assertNotIn(PRIVATE_MARKER, public_stdout.getvalue() + public_stderr.getvalue())
@@ -232,7 +261,7 @@ class NodeSubprocessTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     with self.assertRaises(scraper.ScrapeError) as raised:
                         await scraper._capture_node_list_snapshot(
-                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig()
+                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION)
                         )
                 stop.assert_awaited_once_with(
                     child, user_data_dir=Path("/unused-fixture-profile"),
@@ -258,7 +287,7 @@ class NodeSubprocessTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     with self.assertRaises(expected_error):
                         await scraper._capture_node_list_snapshot(
-                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig()
+                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION)
                         )
                 stop.assert_awaited_once_with(
                     child, user_data_dir=Path("/unused-fixture-profile"),
@@ -470,7 +499,7 @@ class NodeSnapshotValidationTests(unittest.IsolatedAsyncioTestCase):
         captured = snapshot()
         payload = parsed_payload()
         parser = MagicMock(return_value=payload)
-        config = scraper.BrowserConfig()
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION)
         profile = Path("/unused-fixture-profile")
         progress = MagicMock()
         with (
@@ -516,7 +545,7 @@ class NodeSnapshotValidationTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     with self.assertRaises(error_type):
                         await scraper._capture_list_page_attempt(
-                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(), 1
+                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), 1
                         )
 
     async def test_parsed_snapshot_keeps_pagination_card_count_and_terminal_validation(self) -> None:
@@ -544,7 +573,7 @@ class NodeSnapshotValidationTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     with self.assertRaises(scraper.ScrapeError):
                         await scraper._capture_list_page_attempt(
-                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(), None
+                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None
                         )
 
     async def test_parsed_cards_still_reject_foreign_identity_price_and_monthly_data(self) -> None:
@@ -564,7 +593,7 @@ class NodeSnapshotValidationTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     with self.assertRaises(scraper.ScrapeError):
                         await scraper._capture_list_page_attempt(
-                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(), 1
+                            Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), 1
                         )
 
     async def test_parser_exception_does_not_expose_html_in_error_or_progress(self) -> None:
@@ -576,7 +605,7 @@ class NodeSnapshotValidationTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(scraper.ScrapeError) as raised:
                 await scraper._capture_list_page_attempt(
-                    Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(), None, progress=progress
+                    Path("/unused-fixture-profile"), 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None, progress=progress
                 )
         self.assertNotIn(PRIVATE_MARKER, str(raised.exception))
         self.assertNotIn(PRIVATE_MARKER, repr(progress.call_args_list))
@@ -588,7 +617,7 @@ class FatalCleanupPropagationTests(unittest.IsolatedAsyncioTestCase):
         profile = MagicMock()
         profile.__enter__.return_value = profile_path
         profile.__exit__.return_value = False
-        config = scraper.BrowserConfig(chrome_executable=Path(__file__), retries=3)
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__), retries=3)
         fatal = scraper.CaptureCleanupError("无法确认本次私有浏览器已退出")
         with (
             patch.object(scraper, "_capture_list_page_attempt", new=AsyncMock(side_effect=fatal)) as attempt,

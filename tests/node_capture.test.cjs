@@ -12,24 +12,50 @@ const {test} = require('node:test');
 
 const SCRIPTS = path.join(__dirname, '..', 'skills', 'shopee-ugreen-topsales', 'scripts');
 const HELPER = path.join(SCRIPTS, 'capture_list_page.cjs');
-const INIT_SCRIPT = fs.readFileSync(path.join(SCRIPTS, 'proxy-access.js'), 'utf8');
+const INIT_TEMPLATE = fs.readFileSync(path.join(SCRIPTS, 'proxy-access.js'), 'utf8');
+const PROFILE_CATALOG = JSON.parse(fs.readFileSync(path.join(SCRIPTS, 'browser-profiles.json'), 'utf8'));
 const {capture, createManualHandoff, installPersistentLaunchShim, AccessWatch, STEALTH_PROBE} = require(HELPER);
 const LIST_URL = 'https://shopee.ph/ugreen.ph?page=0&shop=64922227&sortBy=sales&tab=0';
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36';
 const HTML = '<!doctype html><html><title>离线列表</title><body>单次 HTML</body></html>';
+const US_REGION = {country_code: 'US', locale: 'en-US', languages: ['en-US', 'en'], timezone_id: 'America/New_York'};
+const SG_REGION = {country_code: 'SG', locale: 'en-SG', languages: ['en-SG', 'en'], timezone_id: 'Asia/Singapore'};
+const PH_REGION = {country_code: 'PH', locale: 'en-PH', languages: ['en-PH', 'en'], timezone_id: 'Asia/Manila'};
+const CHROME_VERSION = '153.0.8010.50';
+function fingerprintFixture(region = US_REGION, profileId = 'windows-intel', version = CHROME_VERSION) {
+  const {id, ua_platform, ...fields} = PROFILE_CATALOG.profiles.find(profile => profile.id === profileId);
+  return {
+    profile_id: id, chrome_version: version,
+    user_agent: `Mozilla/5.0 (${ua_platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version.split('.')[0]}.0.0.0 Safari/537.36`,
+    ...fields, region: {...region, languages: [...region.languages]},
+  };
+}
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort()
+    .map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+function renderInitScript(fingerprint) {
+  return INIT_TEMPLATE.replace('__UGREEN_FINGERPRINT__', () => canonicalJson(fingerprint));
+}
+const INIT_SCRIPT = renderInitScript(fingerprintFixture());
 
-function configFixture(t) {
+function configFixture(t, region = US_REGION, profileId = 'windows-intel', version = CHROME_VERSION) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shopees-ugreen-profile-node-test-'));
   t.after(() => fs.rmSync(root, {recursive: true, force: true}));
   const profile = path.join(root, 'base');
   fs.mkdirSync(path.join(profile, 'Default'), {recursive: true});
   fs.writeFileSync(path.join(profile, 'Local State'), '{}');
   fs.writeFileSync(path.join(profile, 'Default', 'Cookies'), 'offline fixture only');
+  const fingerprint = fingerprintFixture(region, profileId, version);
   return {
     playwright_module: path.join(root, 'fake-playwright'),
     user_data_dir: profile,
     chrome_executable: '/offline-fixture/Google Chrome',
-    init_script: INIT_SCRIPT,
+    region: {...region, languages: [...region.languages]},
+    fingerprint,
+    init_script: renderInitScript(fingerprint),
     url: LIST_URL,
   };
 }
@@ -105,8 +131,8 @@ test('historical lifecycle keeps startup page, waits in full, and reads raw HTML
     args: ['--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--no-sandbox'],
     ignoreHTTPSErrors: true,
     userAgent: USER_AGENT,
-    locale: 'en-PH',
-    timezoneId: 'Asia/Manila',
+    locale: 'en-US',
+    timezoneId: 'America/New_York',
     viewport: {width: 1366, height: 768},
     screen: {width: 1366, height: 768},
     executablePath: config.chrome_executable,
@@ -155,7 +181,7 @@ test('preload shim removes proxy and extra headers from both option sources and 
   const shim = installPersistentLaunchShim(fake.chromium, config, environment);
   try {
     const browser = await fake.chromium.launch({proxy: {server: 'fixture'}, extraHTTPHeaders: {DNT: '1'}, headless: false});
-    await browser.newContext({proxy: {server: 'second-fixture'}, extraHTTPHeaders: {Upgrade: 'fixture'}, locale: 'en-PH'});
+    await browser.newContext({proxy: {server: 'second-fixture'}, extraHTTPHeaders: {Upgrade: 'fixture'}, locale: 'en-US'});
     const args = fake.calls[0][2];
     assert.equal(Object.hasOwn(args, 'proxy'), false);
     assert.equal(Object.hasOwn(args, 'extraHTTPHeaders'), false);
@@ -259,14 +285,232 @@ test('URL validation accepts only the requested UGREEN Top Sales list', async t 
   assert.equal(fake.calls.filter(call => call[0] === 'content').length, 1);
 });
 
-test('original init script and full historical wait/identity cannot be silently weakened', async t => {
+test('selected init script and full wait/identity cannot be silently weakened', async t => {
   const config = configFixture(t);
   for (const patch of [
     {init_script: ''}, {init_script: `${INIT_SCRIPT}\n`}, {post_load_wait_ms: 14999},
     {post_load_wait_ms: -1}, {navigation_timeout_ms: 0}, {headless: 'false'},
-    {user_agent: 'changed'}, {locale: 'en-US'}, {timezone_id: 'America/New_York'},
+    {user_agent: 'changed'}, {locale: 'en-PH'}, {timezone_id: 'Asia/Manila'},
+    {user_agent: USER_AGENT.replace('Chrome/153.', 'Chrome/122.')},
+    {user_agent: USER_AGENT.replace('Chrome/153.', 'Chrome/154.')},
   ]) {
     await assert.rejects(capture({...config, ...patch}, browserFixture().dependencies), {kind: 'config'});
+  }
+});
+
+test('US, SG and PH regions consistently drive context and template without changing selected hardware', async t => {
+  for (const region of [US_REGION, SG_REGION, PH_REGION]) {
+    const config = configFixture(t, region);
+    const fake = browserFixture();
+    await capture(config, fake.dependencies);
+    const options = fake.calls.find(call => call[0] === 'persistent')[2];
+    assert.equal(options.locale, region.locale);
+    assert.equal(options.timezoneId, region.timezone_id);
+    assert.equal(options.userAgent, USER_AGENT);
+    assert.deepEqual(options.viewport, {width: 1366, height: 768});
+    assert.deepEqual(options.screen, {width: 1366, height: 768});
+    assert.equal(Object.hasOwn(options, 'proxy'), false);
+    const rendered = fake.calls.find(call => call[0] === 'init')[1];
+    assert.equal(rendered, renderInitScript(config.fingerprint));
+    assert.equal(rendered.includes('__UGREEN_'), false);
+    assert.equal(rendered.replace(canonicalJson(config.fingerprint), '__UGREEN_FINGERPRINT__'), INIT_TEMPLATE);
+  }
+});
+
+test('region is mandatory and rejects incomplete, mixed, unsupported or unsafe configuration before launch', async t => {
+  const config = configFixture(t);
+  const malformed = [
+    undefined, null, [], {}, {locale: 'en-US'}, {...US_REGION, unexpected: 'PRIVATE'},
+    {...US_REGION, country_code: 'us'}, {...US_REGION, country_code: 'USA'},
+    {...US_REGION, country_code: 'SG'}, {...US_REGION, locale: 'en'},
+    {...US_REGION, locale: 'en_US'}, {...US_REGION, locale: 'en-us'},
+    {...US_REGION, locale: 'zz-US', languages: ['zz-US', 'zz']},
+    {...US_REGION, languages: ['en-US', 'en', 'zh-CN']},
+    {...US_REGION, languages: ['en-SG', 'en']}, {...US_REGION, languages: ['en-US', 'fr']},
+    {...US_REGION, languages: 'en-US,en'}, {...US_REGION, timezone_id: 'Not/AZone'},
+    {...US_REGION, timezone_id: '+08:00'}, {...US_REGION, timezone_id: ''},
+    {...US_REGION, timezone_id: null}, {...US_REGION, locale: 'en-US\";PRIVATE'},
+  ];
+  for (const region of malformed) {
+    const fake = browserFixture();
+    await assert.rejects(capture({...config, region}, fake.dependencies), error => {
+      assert.equal(error.kind, 'config');
+      assert.equal(error.message.includes('PRIVATE'), false);
+      return true;
+    });
+    assert.equal(fake.calls.length, 0);
+  }
+  const {region, ...missing} = config;
+  await assert.rejects(capture(missing, browserFixture().dependencies), {kind: 'config'});
+});
+
+test('region accepts UTC and matching legacy fields but never mixes scripts or trusts caller hashes', async t => {
+  const config = configFixture(t, SG_REGION);
+  const utcRegion = {...SG_REGION, timezone_id: 'UTC'};
+  const utc = browserFixture();
+  await capture(configFixture(t, utcRegion), utc.dependencies);
+  assert.equal(utc.calls[0][2].timezoneId, 'UTC');
+  const matching = browserFixture();
+  await capture({...config, locale: SG_REGION.locale, timezone_id: SG_REGION.timezone_id}, matching.dependencies);
+  assert.equal(matching.calls[0][2].locale, SG_REGION.locale);
+  for (const patch of [
+    {init_script: INIT_SCRIPT}, {init_script: INIT_TEMPLATE}, {init_script: `${config.init_script}\n`},
+    {init_script: 'PRIVATE_SCRIPT', stealth_sha256: 'caller supplied'},
+    {init_script: config.init_script.replace('Win32', 'Linux x86_64')},
+    {init_script: config.init_script.replace('"webgl_vendor":', '"webgl_vendor_tampered":')},
+    {locale: 'en-US'}, {timezone_id: 'America/New_York'}, {locale: null}, {timezone_id: null},
+  ]) {
+    const fake = browserFixture();
+    await assert.rejects(capture({...config, ...patch}, fake.dependencies), {kind: 'config'});
+    assert.equal(fake.calls.length, 0);
+  }
+});
+
+test('local template changes and unreadable templates fail closed without trusting caller content', async t => {
+  const config = configFixture(t);
+  const originalRead = fs.readFileSync;
+  for (const tampered of [`${INIT_TEMPLATE}\n`, null]) {
+    const fake = browserFixture();
+    const read = t.mock.method(fs, 'readFileSync', function (filename, ...args) {
+      if (filename === path.join(SCRIPTS, 'proxy-access.js')) {
+        if (tampered === null) throw new Error('PRIVATE_TEMPLATE_PATH');
+        return tampered;
+      }
+      return originalRead.call(this, filename, ...args);
+    });
+    try {
+      await assert.rejects(capture(config, fake.dependencies), error => {
+        assert.equal(error.kind, 'config');
+        assert.equal(error.message.includes('PRIVATE'), false);
+        return true;
+      });
+      assert.equal(fake.calls.length, 0);
+    } finally {
+      read.mock.restore();
+    }
+  }
+});
+
+test('all eight selected profiles remain coherent across US SG PH and follow the supplied Chrome major', async t => {
+  assert.deepEqual(PROFILE_CATALOG.profiles.map(profile => profile.id), [
+    'windows-intel', 'windows-nvidia', 'windows-amd', 'macos-intel', 'macos-amd',
+    'linux-intel', 'linux-nvidia', 'linux-amd',
+  ]);
+  for (const profile of PROFILE_CATALOG.profiles) {
+    for (const region of [US_REGION, SG_REGION, PH_REGION]) {
+      const config = configFixture(t, region, profile.id, '154.1.9000.7');
+      const before = JSON.stringify(config);
+      const fake = browserFixture();
+      await capture(config, fake.dependencies);
+      const options = fake.calls.find(call => call[0] === 'persistent')[2];
+      assert.equal(options.locale, region.locale);
+      assert.equal(options.timezoneId, region.timezone_id);
+      assert.equal(options.userAgent, config.fingerprint.user_agent);
+      assert.ok(options.userAgent.includes(`(${profile.ua_platform})`));
+      assert.ok(options.userAgent.includes('Chrome/154.0.0.0'));
+      assert.deepEqual(options.viewport, {width: profile.screen_width, height: profile.screen_height});
+      assert.deepEqual(options.screen, options.viewport);
+      assert.equal(fake.calls.find(call => call[0] === 'init')[1], renderInitScript(config.fingerprint));
+      assert.equal(Object.hasOwn(options, 'proxy'), false);
+      assert.equal(JSON.stringify(config), before);
+      const second = browserFixture();
+      await capture(config, second.dependencies);
+      assert.equal(second.calls.find(call => call[0] === 'init')[1], fake.calls.find(call => call[0] === 'init')[1]);
+    }
+  }
+});
+
+test('missing, forged, mixed or incomplete fingerprint configuration never starts the browser', async t => {
+  const config = configFixture(t);
+  const fingerprint = config.fingerprint;
+  const mismatches = [
+    undefined, null, [], {}, {...fingerprint, unexpected: 'PRIVATE'},
+    {...fingerprint, profile_id: 'unknown'}, {...fingerprint, profile_id: 'macos-intel'},
+    {...fingerprint, platform: 'MacIntel'}, {...fingerprint, vendor: 'Other'},
+    {...fingerprint, hardware_concurrency: 16}, {...fingerprint, device_memory: 4},
+    {...fingerprint, max_touch_points: 1}, {...fingerprint, pdf_viewer_enabled: false},
+    {...fingerprint, screen_width: 1920}, {...fingerprint, screen_height: 1080},
+    {...fingerprint, webgl_vendor: 'Intel Inc.'}, {...fingerprint, webgl_renderer: 'PRIVATE'},
+    {...fingerprint, region: SG_REGION}, {...fingerprint, user_agent: USER_AGENT.replace('153.', '122.')},
+    ...['', '153', '153.0.0', '0153.0.0.0', '153.00.0.0', '153.0.0001.0', '153.0.1.0\n',
+      '99999.0.0.0', '153.1234567.0.0', '153.0.0.0;PRIVATE'].map(chrome_version => ({...fingerprint, chrome_version})),
+  ];
+  for (const key of Object.keys(fingerprint)) {
+    const copy = {...fingerprint};
+    delete copy[key];
+    mismatches.push(copy);
+  }
+  for (const value of mismatches) {
+    const fake = browserFixture();
+    await assert.rejects(capture({...config, fingerprint: value}, fake.dependencies), error => {
+      assert.equal(error.kind, 'config');
+      assert.equal(error.message.includes('PRIVATE'), false);
+      return true;
+    });
+    assert.equal(fake.calls.length, 0);
+  }
+});
+
+test('redundant launch dimensions must equal the selected profile and scripts cannot mix selected profiles', async t => {
+  const config = configFixture(t, SG_REGION, 'linux-nvidia');
+  const dimensions = {width: config.fingerprint.screen_width, height: config.fingerprint.screen_height};
+  const matching = browserFixture();
+  await capture({...config, viewport: dimensions, screen: dimensions, user_agent: config.fingerprint.user_agent}, matching.dependencies);
+  assert.deepEqual(matching.calls[0][2].viewport, dimensions);
+  for (const patch of [
+    {viewport: null}, {screen: null}, {viewport: {width: 1366, height: 768}},
+    {screen: {...dimensions, extra: true}}, {screen: {width: String(dimensions.width), height: dimensions.height}},
+    {user_agent: USER_AGENT}, {user_agent: null},
+    {init_script: renderInitScript(fingerprintFixture(SG_REGION, 'windows-nvidia'))},
+    {init_script: config.init_script.replace('fingerprint.webgl_vendor', '"PRIVATE_GPU"')},
+  ]) {
+    const fake = browserFixture();
+    await assert.rejects(capture({...config, ...patch}, fake.dependencies), {kind: 'config'});
+    assert.equal(fake.calls.length, 0);
+  }
+});
+
+test('shared catalog validates exact schema unique fields complete profile IDs and coherent OS GPU values', async t => {
+  const config = configFixture(t);
+  const originalRead = fs.readFileSync;
+  const encodeChangedProfile = patch => JSON.stringify({...PROFILE_CATALOG,
+    profiles: PROFILE_CATALOG.profiles.map((profile, index) => index === 0 ? {...profile, ...patch} : profile)});
+  const invalid = [
+    null, 'PRIVATE_BAD_JSON', ' '.repeat(64 * 1024 + 1),
+    JSON.stringify({...PROFILE_CATALOG, schema_version: true}),
+    JSON.stringify({...PROFILE_CATALOG, unexpected: true}),
+    JSON.stringify({...PROFILE_CATALOG, profiles: PROFILE_CATALOG.profiles.slice(1)}),
+    JSON.stringify({...PROFILE_CATALOG, profiles: [PROFILE_CATALOG.profiles[1], ...PROFILE_CATALOG.profiles.slice(1)]}),
+    JSON.stringify(PROFILE_CATALOG).replace('"schema_version":1', '"schema_version":1,"schema_version":1'),
+    JSON.stringify(PROFILE_CATALOG).replace('"id":"windows-intel"', '"id":"windows-intel","id":"windows-intel"'),
+    ...[
+      {id: 'unknown'}, {extra: true}, {ua_platform: 'X11; Linux x86_64'}, {platform: 'MacIntel'},
+      {vendor: 'Other'}, {hardware_concurrency: true}, {hardware_concurrency: 3}, {device_memory: 16},
+      {max_touch_points: 1}, {pdf_viewer_enabled: 1}, {screen_width: 900}, {screen_height: 0},
+      {screen_width: 7680}, {webgl_vendor: 'Intel Inc.'}, {webgl_renderer: 'Intel Iris OpenGL Engine'},
+      {webgl_renderer: 'ANGLE (Intel, Direct3D11 D3D11 Metal)'},
+      {webgl_vendor: 'Google Inc. (Intel)\n'},
+    ].map(encodeChangedProfile),
+  ];
+  for (const raw of invalid) {
+    const read = t.mock.method(fs, 'readFileSync', function (filename, ...args) {
+      if (filename === path.join(SCRIPTS, 'browser-profiles.json')) {
+        if (raw === null) throw new Error('PRIVATE_CATALOG_PATH');
+        return raw;
+      }
+      return originalRead.call(this, filename, ...args);
+    });
+    const fake = browserFixture();
+    try {
+      await assert.rejects(capture(config, fake.dependencies), error => {
+        assert.equal(error.kind, 'config');
+        assert.equal(error.message.includes('PRIVATE'), false);
+        return true;
+      });
+      assert.equal(fake.calls.length, 0);
+    } finally {
+      read.mock.restore();
+    }
   }
 });
 
@@ -321,20 +565,26 @@ test('access watch checks received body tasks for at most two seconds and detach
 });
 
 test('probe is limited to the same public fingerprint fields used by Python verification', () => {
+  const fingerprint = fingerprintFixture();
   const navigator = {
     webdriver: undefined, userAgent: USER_AGENT, userAgentData: {toJSON: () => ({mobile: false})},
-    language: 'en-US', languages: ['en-US', 'en', 'zh-CN'], platform: 'Win32', vendor: 'Google Inc.',
-    plugins: Array(5), hardwareConcurrency: 8, deviceMemory: 8,
+    language: 'en-US', languages: ['en-US', 'en'], platform: 'Win32', vendor: 'Google Inc.',
+    plugins: Array(5), hardwareConcurrency: 8, deviceMemory: 8, maxTouchPoints: 0, pdfViewerEnabled: true,
   };
   const result = vm.runInNewContext(`(${STEALTH_PROBE.toString()})()`, {
-    navigator, window: {chrome: {runtime: {}}, screen: {width: 1366, height: 768}},
-    Intl: {DateTimeFormat: () => ({resolvedOptions: () => ({timeZone: 'Asia/Manila'})})},
+    navigator,
+    document: {createElement: () => ({getContext: () => ({getParameter: code =>
+      code === 37445 ? fingerprint.webgl_vendor : fingerprint.webgl_renderer})})},
+    window: {chrome: {runtime: {getManifest: () => ({version: CHROME_VERSION})}}, screen: {width: 1366, height: 768}},
+    Intl: {DateTimeFormat: () => ({resolvedOptions: () => ({timeZone: 'America/New_York'})})},
   });
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
     webdriver_is_undefined: true, user_agent: USER_AGENT, user_agent_data: {mobile: false},
-    language: 'en-US', languages: ['en-US', 'en', 'zh-CN'], platform: 'Win32', vendor: 'Google Inc.',
+    language: 'en-US', languages: ['en-US', 'en'], platform: 'Win32', vendor: 'Google Inc.',
     plugin_count: 5, hardware_concurrency: 8, device_memory: 8,
-    chrome_runtime_present: true, time_zone: 'Asia/Manila', screen_width: 1366, screen_height: 768,
+    max_touch_points: 0, pdf_viewer_enabled: true, chrome_version: CHROME_VERSION,
+    webgl_vendor: fingerprint.webgl_vendor, webgl_renderer: fingerprint.webgl_renderer,
+    chrome_runtime_present: true, time_zone: 'America/New_York', screen_width: 1366, screen_height: 768,
   });
 });
 

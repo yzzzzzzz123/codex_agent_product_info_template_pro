@@ -18,6 +18,11 @@
 抓取器按全局身份去重，保留商品在列表中首次出现的顺序与排名，不发现或跟随该店铺
 范围之外的商品。
 
+当前范围还包含 `PHP` 货币和 `down-ph` 图片域规则。系统代理出口检测返回 SG 不会
+改变目标站点、店铺身份、货币或图片域，也不证明支持 Shopee SG。SG 需求必须先由用户
+确认真实 UGREEN 店铺 URL，再单独完成范围、解析和验收适配；此前不得静默用 PH 结果
+交付为 SG 数据。
+
 ## 已知商品详情刷新
 
 用户于 2026-09-18 明确确认今天没有新增商品，并接受昨日已知商品清单。这个显式模式
@@ -53,21 +58,38 @@
 确定性 runner 启动 macOS 已安装的 Google Chrome，每次在 `/private/tmp` 创建独立
 私有临时 profile。它只从本机 Chrome 的 `Default` 档案复制必要配置、Cookie、Local
 Storage 和 Session Storage 到临时副本，不自动切换其他档案；原 profile 绝不直接启动或修改。
-`scripts/proxy-access.js` 在每个 document 的页面脚本执行前注入。当前已恢复用户提供的
-完整 `buildStealthScript`：保留 webdriver、自动化标记清除及全局属性过滤、chrome 对象、
-权限、插件、语言、平台、硬件/PDF、screen/outer 尺寸和 WebGL 全部原注入项。
-脚本为 142 行、4,847 字节，与历史原始内容完全一致；语言列表为 `en-US/en/zh-CN`，
-navigator language 为 `en-US`、platform 为 `Win32`。当前 SHA-256：
-`0917c37fcfba7718f79bd6ec9d63996b7e07c23e88fe19f87e3b096799ef9128`。
-未经用户许可不得删除或替换原注入项，
-已证实的问题逐项最小处理。重复执行失败、插件普通数组、权限普通对象等原代码局限仍在，
-本地测试记录这些局限，不代表已修复或保持了对应的原生 API。
+共享 `scripts/browser-profiles.json` 是本地兼容性测试配置目录；文档不复制完整配置，
+避免两套来源漂移。Chrome 版本读取实际二进制的 `--version`，不能把历史固定 153 当作
+当前版本。仅调整声明值不构成真实 Windows/macOS/Linux、CPU 或 GPU 仿真，GPU 也不
+表示国籍；保留的原生 UA-CH 可能与测试配置不同，不能报告为所有层面完全一致。
+Windows UA 中的 `Win64; x64` 与兼容 API `navigator.platform` 的 `Win32` 不是同一
+字段的两份架构值，不应仅凭两者文字不同判为错误。
 
-Context 参数按用户最新要求恢复昨日配置：固定 Windows Chrome 122 UA、locale `en-PH`、
-timezone `Asia/Manila`、viewport/screen `1366×768`、`ignore_https_errors=True`。
-本机运行的是 macOS 系统 Chrome；保留 Chrome 原生 Client Hints，不叠加 UA/Intl 覆写，
-不随机请求头或轮换身份。这些配置不代表完整 Windows 设备仿真，也不改变 IP 地区或登录状态。
-原始脚本与历史成功配置见访问记录。Node/preload 与单次 HTML/lxml 路径已完成两轮实时
+当前目录共有八套配置，仅表示声明值组合，不表示存在八台对应机器：
+
+| 配置分组 | 配置 ID |
+| --- | --- |
+| Windows | `windows-intel`、`windows-nvidia`、`windows-amd` |
+| macOS | `macos-intel`、`macos-amd` |
+| Linux | `linux-intel`、`linux-nvidia`、`linux-amd` |
+
+`scripts/proxy-access.js` 原有注入结构仍存在；参数化不等于修复重复执行、插件数组、
+权限对象、接收对象检查等八类已知 API 语义缺陷。未经用户许可不删除或替换原项，但
+不能把这些局限写成原生 API 兼容、完整硬件仿真或绕过风控保证。新模板哈希应从本次
+实际文件验证，不使用历史字节数/哈希或旧测试数量证明新实现正确。
+
+启动地区检测使用单独的空白临时 Chrome，正常继承系统代理，查询
+`https://ipwho.is/?fields=success,country_code,timezone.id`；不读取真实会话、不保存
+完整 IP 响应，识别失败停止，不默认美国。国家映射只是 locale/languages 的配置默认值，
+不是用户母语或国籍证据；时区使用已校验的 IANA 标识。系统代理/PAC 可能按域分流，
+该查询只说明 `ipwho.is` 的出口，不能证明 Shopee 出口、站点地区判定或账号状态。
+地区值只影响 locale/languages/timezone，不切换设备型号或 GPU，也不修改系统代理、
+主机或日常 Chrome。业务日期与 worktree 命名继续按 `Asia/Shanghai`。
+
+同一轮列表、PDP、普通故障重试和人工恢复保持相同配置；不得按页面或因验证失败
+自动变换身份或代理。地区探测、本地 API 测试及字段探针通过均不是采集成功证据。
+旧 Chrome 122/153、固定美国地区与旧哈希的事实只作为访问记录中的历史，不适用于新配置。
+Node/preload 与单次 HTML/lxml 路径已完成两轮实时
 复测当时列表未成功；后续人工处理及解析修正后的复测首屏和详情均通过，见访问记录。
 当前启用 `--manual-access`，保留原参数，不代表整个运行环境与昨日相同。
 本轮复测及正式 runner 临时设置 `PLAYWRIGHT_NODEJS_PATH=/opt/homebrew/bin/node`，使用已安装
@@ -78,9 +100,7 @@ PDP 继续 Python Playwright。Python Playwright 默认自带 Node 24.21。旧�
 
 列表页和每个 PDP 校验关键注入值；注入验证成功不等于站点一定允许访问。项目不设置
 代理服务器、proxy fallback 或代理凭据，也不强制直连；Chrome 正常继承系统代理。
-保留所需 `--disable-blink-features=AutomationControlled`，忽略
-`--use-mock-keychain`、`--password-store=basic` 默认参数以复制原会话行为。
-不加历史曾导致资源访问问题的额外 DNT/Upgrade 请求头。退出时清理临时 profile，
+不通过随机请求头、代理轮换或修改自动化标记消除站点挑战。退出时清理临时 profile，
 本机原 profile 保持不变。完整证据与限制见 [verified_access.md](verified_access.md)。
 
 ## 列表页契约
@@ -98,10 +118,9 @@ HTML 与必要元数据只经 stdin/stdout 管道传递；由 `list_html.py` 使
 不在等待前提前判定、不滚动、不追加稳定采样，失败诊断使用本次解析结果。
 采集标签只忽略
 `/api/v4/shop/get_shop_tab` 的业务码 `90309999`；HTTP 拒绝、登录/验证页面仍会失败。
-未启用人工模式时，按原 batch 对 Node 非零退出及 HTML 校验异常（含 `challenge marker found`）的处理，
-每轮每个列表页失败最多尝试三次，保留 10/20 秒退避；每次仍严格拒收挑战页面，耗尽返回
-本轮失败。用户明确要求继续可另开诊断轮，三次不是整个任务上限；不无限自动重试或等待
-人工验证。启用人工模式后的暂停与恢复见下节。列表每次关闭 context 后不额外清理
+本次配置扩充不改变现有列表有界重试流程；未启用人工模式时，每轮每页最多三次尝试，
+耗尽返回本轮失败，失败页面始终拒收。各次使用同一轮配置，不因挑战更换设备身份或
+代理，不无限追加尝试。启用人工模式后的暂停与恢复见下节。列表每次关闭 context 后不额外清理
 会话文件，保留 LOG、journal、WAL/SHM 等临时状态。默认列表页间仍至少等待 10 秒。
 全量列表完成后，才从该 post-list 会话副本建立详情会话；默认一个详情通道。
 
@@ -229,9 +248,9 @@ Shop、item 和 model ID 均使用 Excel 文本格式。导出器先写临时 `.
 
 ## 强制停止条件
 
-- 人工模式遇到验证/CAPTCHA、登录拦截或访问错误先暂停保留窗口；未获真实有效数据不能
-  发布。未启用人工模式时 PDP 挑战停止；列表在本轮单页最多三次有界尝试后仍失败，
-  或有界重试后仍有 HTTP 错误。任何单次验证页面都不得被接受为有效结果。
+- 人工模式遇到验证/CAPTCHA、登录拦截或访问错误先暂停保留窗口；非人工模式 PDP
+  挑战停止，列表按既有有界重试上限结束。配置扩充不改变运行控制、不新增尝试或
+  身份/代理切换。任何验证页面、用户确认或本地配置测试都不得被接受为有效采集结果。
 - 分页缺失、不连续、发生变化，卡片异常或相邻页重复。
 - 任一 URL、canonical、OG、BFF 或店铺身份不匹配。
 - 任一 PDP、SKU model 集合或商品图库缺失。

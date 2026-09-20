@@ -1,3 +1,4 @@
+  const fingerprint = __UGREEN_FINGERPRINT__;
 
   Object.defineProperty(navigator, 'webdriver', {
     get: () => undefined,
@@ -25,7 +26,7 @@
       onInstalled: { addListener: () => {}, removeListener: () => {} },
       sendMessage: () => {},
       connect: () => ({}),
-      getManifest: () => ({ version: '122.0.0.0' })
+      getManifest: () => ({ version: fingerprint.chrome_version })
     },
     loadTimes: () => ({
       requestTime: Date.now() / 1000,
@@ -82,58 +83,58 @@
   });
 
   Object.defineProperty(navigator, 'languages', {
-    get: () => ['en-US', 'en', 'zh-CN'],
+    get: () => [...fingerprint.region.languages],
     configurable: false
   });
 
   Object.defineProperty(navigator, 'language', {
-    get: () => 'en-US',
+    get: () => fingerprint.region.locale,
     configurable: false
   });
 
   Object.defineProperty(navigator, 'vendor', {
-    get: () => 'Google Inc.',
+    get: () => fingerprint.vendor,
     configurable: false
   });
 
   Object.defineProperty(navigator, 'platform', {
-    get: () => 'Win32',
+    get: () => fingerprint.platform,
     configurable: false
   });
 
   Object.defineProperty(navigator, 'maxTouchPoints', {
-    get: () => 0,
+    get: () => fingerprint.max_touch_points,
     configurable: false
   });
 
   Object.defineProperty(navigator, 'hardwareConcurrency', {
-    get: () => 8,
+    get: () => fingerprint.hardware_concurrency,
     configurable: false
   });
 
   Object.defineProperty(navigator, 'deviceMemory', {
-    get: () => 8,
+    get: () => fingerprint.device_memory,
     configurable: false
   });
 
   Object.defineProperty(navigator, 'pdfViewerEnabled', {
-    get: () => true,
+    get: () => fingerprint.pdf_viewer_enabled,
     configurable: false
   });
 
   Object.defineProperty(window.screen, 'availWidth', { get: () => window.innerWidth });
   Object.defineProperty(window.screen, 'availHeight', { get: () => window.innerHeight });
-  Object.defineProperty(window.screen, 'width', { get: () => 1366 });
-  Object.defineProperty(window.screen, 'height', { get: () => 768 });
-  Object.defineProperty(window, 'outerWidth', { get: () => 1366 });
-  Object.defineProperty(window, 'outerHeight', { get: () => 768 });
+  Object.defineProperty(window.screen, 'width', { get: () => fingerprint.screen_width });
+  Object.defineProperty(window.screen, 'height', { get: () => fingerprint.screen_height });
+  Object.defineProperty(window, 'outerWidth', { get: () => fingerprint.screen_width });
+  Object.defineProperty(window, 'outerHeight', { get: () => fingerprint.screen_height });
 
   const patchWebGL = (prototype) => {
     if (!prototype || typeof prototype.getParameter !== 'function') return;
     const originalGetParameter = prototype.getParameter;
     prototype.getParameter = function(parameter) {
-      if (parameter === 37445) return 'Intel Inc.';
-      if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+      if (parameter === 37445) return fingerprint.webgl_vendor;
+      if (parameter === 37446) return fingerprint.webgl_renderer;
       return originalGetParameter.call(this, parameter);
     };
   };

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills/shopee-ugreen-topsales/scripts"))
 import scraper
-from test_scraper import card, probe
+from test_scraper import FIXTURE_VERSION, US_REGION, card, probe
 
 
 def valid_payload(item_id="100"):
@@ -57,7 +57,7 @@ class FakePage:
 
 class ManualDetailsTests(unittest.IsolatedAsyncioTestCase):
     def config(self, **kwargs):
-        return scraper.BrowserConfig(manual_list_handoff=True, **kwargs)
+        return scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, manual_list_handoff=True, **kwargs)
 
     async def test_handoff_keeps_same_page_until_resume_then_reads_without_renavigation(self):
         page, product = FakePage(), card()
@@ -292,7 +292,7 @@ class ManualDetailsTests(unittest.IsolatedAsyncioTestCase):
         page = FakePage()
         with patch.object(scraper, "_wait_for_manual_resume", new_callable=AsyncMock) as wait:
             with self.assertRaises(scraper.AccessChallengeError):
-                await scraper._visit_detail(page, card(), 1, scraper.BrowserConfig())
+                await scraper._visit_detail(page, card(), 1, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION))
         wait.assert_not_awaited()
         page.goto.assert_awaited_once()
 

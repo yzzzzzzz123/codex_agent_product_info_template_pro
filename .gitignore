@@ -22,3 +22,6 @@ dist/
 
 # 每日抓取使用独立 Git worktree；目录本身不纳入主工作树状态。
 /worktrees/
+
+# 本机浏览器会话种子可能含登录凭据，绝不纳入版本控制。
+/.local-browser-profiles/

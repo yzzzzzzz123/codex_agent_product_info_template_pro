@@ -17,6 +17,9 @@ from openpyxl import Workbook
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "skills/shopee-ugreen-topsales/scripts"))
 import scraper  # noqa: E402
+from test_scraper import FIXTURE_VERSION, fingerprint
+
+US_REGION = scraper.BrowserRegion("US", "en-US", ("en-US", "en"), "America/New_York")
 
 
 def make_reference(path: Path, ids: tuple[str, ...] = ("100", "200", "300")) -> None:
@@ -160,7 +163,7 @@ class KnownRefreshFlowTests(unittest.IsolatedAsyncioTestCase):
             profile.assert_not_called()
 
     async def test_multichannel_rejected(self) -> None:
-        config = scraper.BrowserConfig(detail_shards=2, chrome_executable=Path(__file__))
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, detail_shards=2, chrome_executable=Path(__file__))
         with self.assertRaisesRegex(ValueError, "单路"):
             await scraper.scrape_known_details(config, Path("unused"), no_new_products_confirmed=True)
 
@@ -174,7 +177,7 @@ class KnownRefreshFlowTests(unittest.IsolatedAsyncioTestCase):
             profile.__enter__.return_value = base
             profile.__exit__.return_value = False
             context = object()
-            config = scraper.BrowserConfig(chrome_executable=Path(__file__), historical_list_preflight=True)
+            config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__), historical_list_preflight=True)
 
             async def collect(contexts, cards, passed_config, progress):
                 self.assertEqual(contexts, [context])
@@ -265,7 +268,7 @@ class DetailsOnlyVerificationTests(unittest.IsolatedAsyncioTestCase):
                 for name in ("_select_verification_targets", "_historical_list_preflight",
                              "_capture_list_page_with_profile", "_capture_node_list_snapshot"):
                     stack.enter_context(patch.object(scraper, name, side_effect=AssertionError("不得使用列表链路")))
-                config = scraper.BrowserConfig(chrome_executable=Path(__file__), historical_list_preflight=True)
+                config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__), historical_list_preflight=True)
                 report = await scraper.verify_access(config, path, details_only=True)
                 self.assertEqual([call.args[1].item_id for call in visited.await_args_list], ["100", "300", "500"])
                 self.assertEqual([call.args[1] for call in park.await_args_list], [10000, 10000, 0])

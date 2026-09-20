@@ -27,6 +27,9 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import playwright as playwright_package
 from playwright.async_api import BrowserContext, Page, async_playwright
 
+from browser_region import BrowserRegion, detect_browser_region
+from browser_fingerprint import APPROVED_PROFILE_IDS, choose_profile_id, load_fingerprint
+
 
 SHOP_ID = "64922227"
 STORE_URL = (
@@ -38,16 +41,7 @@ STORE_PAGE_URL_TEMPLATE = (
 )
 DEFAULT_CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 DEFAULT_CHROME_DATA = Path.home() / "Library/Application Support/Google/Chrome"
-STEALTH_SHA256 = "0917c37fcfba7718f79bd6ec9d63996b7e07c23e88fe19f87e3b096799ef9128"
-BROWSER_LOCALE = "en-PH"
-BROWSER_LANGUAGES = ("en-US", "en", "zh-CN")
-BROWSER_TIMEZONE = "Asia/Manila"
-CHROME_USER_AGENT_TEMPLATE = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/{major}.0.0.0 Safari/537.36"
-)
-CHROME_USER_AGENT = CHROME_USER_AGENT_TEMPLATE.format(major="122")
+STEALTH_SHA256 = "670a595ce5f75286ea1d5af02c5c1aae3433745a2bc15ae744f926a80fbb215c"
 IDENTITY_PATTERNS = (
     re.compile(r"(?:-i\.|/i\.)(\d+)\.(\d+)(?:/)?$", re.I),
     re.compile(r"/product/(\d+)/(\d+)(?:/)?$", re.I),
@@ -82,8 +76,18 @@ class BrowserConfig:
     chrome_executable: Path = DEFAULT_CHROME
     historical_list_preflight: bool = False
     manual_list_handoff: bool = False
+    region: BrowserRegion | None = None
+    browser_profile: str = "auto"
+    chrome_version: str | None = None
+    _fingerprint_json: str | None = field(default=None, init=False, repr=False)
 
     def validate(self) -> None:
+        if self.region is not None:
+            self.region.validate()
+        if self.browser_profile not in ("auto", *APPROVED_PROFILE_IDS):
+            raise ValueError("未知浏览器配置；必须使用批准配置或 auto")
+        if self.chrome_version is not None and not re.fullmatch(r"[1-9]\d*\.\d+\.\d+\.\d+", self.chrome_version):
+            raise ValueError("Chrome 版本格式无效")
         if self.manual_list_handoff and self.headless:
             raise ValueError("人工列表接管需要可见浏览器窗口")
         if self.manual_list_handoff and self.detail_shards != 1:
@@ -314,6 +318,13 @@ LIST_PAGE_SCRIPT = r"""
       plugin_count: navigator.plugins ? navigator.plugins.length : null,
       hardware_concurrency: navigator.hardwareConcurrency,
       device_memory: navigator.deviceMemory === undefined ? null : navigator.deviceMemory,
+      max_touch_points: navigator.maxTouchPoints,
+      pdf_viewer_enabled: navigator.pdfViewerEnabled,
+      chrome_version: window.chrome?.runtime?.getManifest?.().version ?? null,
+      webgl_vendor: (() => { try { const gl = document.createElement('canvas').getContext('webgl');
+        return gl ? gl.getParameter(37445) : null; } catch { return null; } })(),
+      webgl_renderer: (() => { try { const gl = document.createElement('canvas').getContext('webgl');
+        return gl ? gl.getParameter(37446) : null; } catch { return null; } })(),
       chrome_runtime_present: Boolean(window.chrome && window.chrome.runtime),
       time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       screen_width: window.screen.width,
@@ -460,6 +471,13 @@ DETAIL_PAGE_SCRIPT = r"""
       plugin_count: navigator.plugins ? navigator.plugins.length : null,
       hardware_concurrency: navigator.hardwareConcurrency,
       device_memory: navigator.deviceMemory === undefined ? null : navigator.deviceMemory,
+      max_touch_points: navigator.maxTouchPoints,
+      pdf_viewer_enabled: navigator.pdfViewerEnabled,
+      chrome_version: window.chrome?.runtime?.getManifest?.().version ?? null,
+      webgl_vendor: (() => { try { const gl = document.createElement('canvas').getContext('webgl');
+        return gl ? gl.getParameter(37445) : null; } catch { return null; } })(),
+      webgl_renderer: (() => { try { const gl = document.createElement('canvas').getContext('webgl');
+        return gl ? gl.getParameter(37446) : null; } catch { return null; } })(),
       chrome_runtime_present: Boolean(window.chrome && window.chrome.runtime),
       time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       screen_width: window.screen.width,
@@ -698,7 +716,7 @@ def _clone_detail_profiles(base: Path, count: int) -> list[Path]:
     return shard_profiles
 
 
-def _stealth_script() -> str:
+def _stealth_template() -> str:
     path = Path(__file__).with_name("proxy-access.js")
     script = path.read_bytes()
     if hashlib.sha256(script).hexdigest() != STEALTH_SHA256:
@@ -706,13 +724,70 @@ def _stealth_script() -> str:
     return script.decode("utf-8")
 
 
+def _stealth_script(fingerprint: dict[str, Any]) -> str:
+    """共享目录生成的完整配置只渲染一次；模板结构受哈希约束。"""
+    script = _stealth_template()
+    token = "__UGREEN_FINGERPRINT__"
+    if script.count(token) != 1:
+        raise ScrapeError("配置模板占位符缺失或重复；停止运行")
+    return script.replace(token, json.dumps(fingerprint, ensure_ascii=True, sort_keys=True, separators=(",", ":")))
+
+
+def _require_region(config: BrowserConfig) -> BrowserRegion:
+    if not isinstance(config.region, BrowserRegion):
+        raise ScrapeError("尚未识别系统代理出口地区；不得回退固定美国或菲律宾配置")
+    config.region.validate()
+    return config.region
+
+
+def _require_fingerprint(config: BrowserConfig) -> dict[str, Any]:
+    region = _require_region(config)
+    if config.browser_profile == "auto" or config.chrome_version is None:
+        raise ScrapeError("尚未绑定本轮浏览器配置与真实 Chrome 版本；不得沿用固定 UA")
+    if config._fingerprint_json is not None:
+        frozen = json.loads(config._fingerprint_json)
+        if (frozen["profile_id"] != config.browser_profile or frozen["chrome_version"] != config.chrome_version
+                or frozen["region"] != region.to_dict()):
+            raise ScrapeError("本轮已绑定配置发生变化；不允许在同轮切换")
+        return frozen
+    try:
+        fingerprint = load_fingerprint(config.browser_profile, config.chrome_version, region)
+    except ValueError as exc:
+        raise ScrapeError("浏览器配置校验失败；停止本轮") from exc
+    config._fingerprint_json = json.dumps(fingerprint, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return json.loads(config._fingerprint_json)
+
+
+async def _prepare_browser_config(config: BrowserConfig, progress: Progress | None) -> BrowserConfig:
+    """每轮绑定一次；列表、详情、重试与人工恢复不得重新随机选择身份。"""
+    _stealth_template()
+    if config.region is None:
+        _emit(progress, "启动前识别浏览器出口地区；仅查询地区服务，不修改系统代理")
+        try:
+            region = await detect_browser_region(config.chrome_executable, headless=config.headless)
+        except Exception as exc:
+            raise ScrapeError("出口地区识别失败；停止本轮，不沿用旧地区或访问商品页") from exc
+        config = replace(config, region=region)
+    region = _require_region(config)
+    if config.chrome_version is None:
+        config = replace(config, chrome_version=await _chrome_version(config.chrome_executable))
+    if config.browser_profile == "auto":
+        config = replace(config, browser_profile=choose_profile_id())
+    fingerprint = _require_fingerprint(config)
+    _emit(progress, f"本轮地区：{region.country_code} / {region.locale} / {region.timezone_id}；"
+          f"配置：{fingerprint['profile_id']} / Chrome {fingerprint['chrome_version']}；"
+          "单轮固定；地区查询不证明 Shopee 分流出口相同，配置不等于真实跨系统硬件模拟")
+    return config
+
+
 def _windows_chrome_user_agent(version: str) -> str:
     if not re.fullmatch(r"[1-9]\d*\.\d+\.\d+\.\d+", version):
         raise ScrapeError("无法识别本机 Chrome 版本；不回退到写死的 UA")
-    return CHROME_USER_AGENT_TEMPLATE.format(major=version.split(".")[0])
+    return ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Chrome/{version.split('.')[0]}.0.0.0 Safari/537.36")
 
 
-async def _chrome_user_agent(executable: Path) -> str:
+async def _chrome_version(executable: Path) -> str:
     """读取当前安装版本；不启动真实 profile、不修改浏览器或生成随机请求头。"""
     try:
         process = await asyncio.create_subprocess_exec(
@@ -739,11 +814,13 @@ async def _chrome_user_agent(executable: Path) -> str:
     )
     if process.returncode != 0 or match is None:
         raise ScrapeError("无法识别本机 Chrome 版本；不回退到写死的 UA")
-    return _windows_chrome_user_agent(match[1])
+    return match[1]
 
 
 async def _launch_context(config: BrowserConfig, user_data_dir: Path) -> BrowserContext:
-    script = _stealth_script()
+    region = _require_region(config)
+    fingerprint = _require_fingerprint(config)
+    script = _stealth_script(fingerprint)
     playwright = await async_playwright().start()
     context: BrowserContext | None = None
     try:
@@ -752,11 +829,11 @@ async def _launch_context(config: BrowserConfig, user_data_dir: Path) -> Browser
             executable_path=str(config.chrome_executable),
             headless=config.headless,
             ignore_https_errors=True,
-            user_agent=CHROME_USER_AGENT,
-            locale=BROWSER_LOCALE,
-            timezone_id=BROWSER_TIMEZONE,
-            viewport={"width": 1366, "height": 768},
-            screen={"width": 1366, "height": 768},
+            user_agent=fingerprint["user_agent"],
+            locale=region.locale,
+            timezone_id=region.timezone_id,
+            viewport={"width": fingerprint["screen_width"], "height": fingerprint["screen_height"]},
+            screen={"width": fingerprint["screen_width"], "height": fingerprint["screen_height"]},
             args=["--disable-blink-features=AutomationControlled"],
             ignore_default_args=["--use-mock-keychain", "--password-store=basic"],
             env={key: value for key, value in os.environ.items()
@@ -898,30 +975,30 @@ async def _launch_contexts(
     return contexts
 
 
-def _valid_stealth_probe(probe: Any) -> bool:
+def _valid_stealth_probe(probe: Any, fingerprint: dict[str, Any]) -> bool:
     if not isinstance(probe, dict):
         return False
+    region = fingerprint["region"]
     return all(
         (
             probe.get("webdriver_is_undefined") is True,
-            probe.get("user_agent") == CHROME_USER_AGENT,
-            probe.get("language") == "en-US",
-            probe.get("languages") == list(BROWSER_LANGUAGES),
-            probe.get("platform") == "Win32",
-            probe.get("vendor") == "Google Inc.",
+            probe.get("user_agent") == fingerprint["user_agent"],
+            probe.get("language") == region["locale"],
+            probe.get("languages") == region["languages"],
             probe.get("plugin_count") == 5,
-            probe.get("hardware_concurrency") == 8,
-            probe.get("device_memory") == 8,
             probe.get("chrome_runtime_present") is True,
-            probe.get("time_zone") == BROWSER_TIMEZONE,
-            probe.get("screen_width") == 1366,
-            probe.get("screen_height") == 768,
+            probe.get("time_zone") == region["timezone_id"],
+            all(probe.get(key) == fingerprint[key] for key in (
+                "platform", "vendor", "hardware_concurrency", "device_memory",
+                "screen_width", "screen_height", "max_touch_points", "pdf_viewer_enabled",
+                "chrome_version", "webgl_vendor", "webgl_renderer",
+            )),
         )
     )
 
 
 def _validate_list_payload(
-    payload: dict[str, Any], page_index: int, expected_total: int | None
+    payload: dict[str, Any], page_index: int, expected_total: int | None, fingerprint: dict[str, Any]
 ) -> dict[str, Any]:
     """浏览器 DOM 与 Node HTML 路径共用的数据验收，不接受缺项或部分页面。"""
     if payload.get("challenge"):
@@ -937,7 +1014,7 @@ def _validate_list_payload(
         and str(total_values[0]).isdigit()
         and not payload.get("errors")
         and bool(cards)
-        and _valid_stealth_probe(payload.get("stealth_probe"))
+        and _valid_stealth_probe(payload.get("stealth_probe"), fingerprint)
     )
     if ready:
         total = int(total_values[0])
@@ -998,7 +1075,7 @@ async def _load_list_page(
         current_values = payload.get("current_values") or []
         total_values = payload.get("total_values") or []
         cards = payload.get("cards") or []
-        probe_valid = _valid_stealth_probe(payload.get("stealth_probe"))
+        probe_valid = _valid_stealth_probe(payload.get("stealth_probe"), _require_fingerprint(config))
         diagnostic = (
             f"采集标签单次快照：路径={urlsplit(str(payload.get('final_url') or page.url)).path}，"
             f"商品卡={len(cards)}，结果区域={payload.get('result_view_count')}，"
@@ -1013,7 +1090,7 @@ async def _load_list_page(
             raise AccessChallengeError("Shopee 当前访问线路进入登录页；本轮不等待人工操作")
         if response is not None and response.status >= 400:
             raise ScrapeError(f"HTTP {response.status}")
-        payload = _validate_list_payload(payload, page_index, expected_total)
+        payload = _validate_list_payload(payload, page_index, expected_total, _require_fingerprint(config))
         await _check_access(page)
         return payload
     except ScrapeError as exc:
@@ -1275,6 +1352,8 @@ async def _capture_node_list_snapshot(
     *, expected_total: int | None = None, progress: Progress | None = None,
 ) -> dict[str, Any]:
     """沿用原 Node/preload 获取 HTML；HTML/metadata 仅通过内存管道传递。"""
+    region = _require_region(config)
+    fingerprint = _require_fingerprint(config)
     node = os.environ.get("PLAYWRIGHT_NODEJS_PATH") or shutil.which("node")
     if not node or not Path(node).is_file():
         raise ScrapeError("找不到已安装的系统 Node；不下载或切换运行时")
@@ -1290,10 +1369,12 @@ async def _capture_node_list_snapshot(
         "url": STORE_PAGE_URL_TEMPLATE.format(page=page_index),
         "navigation_timeout_ms": config.list_navigation_timeout_ms,
         "post_load_wait_ms": config.list_settle_ms,
-        "init_script": _stealth_script(),
-        "user_agent": CHROME_USER_AGENT,
-        "locale": BROWSER_LOCALE,
-        "timezone_id": BROWSER_TIMEZONE,
+        "init_script": _stealth_script(fingerprint),
+        "user_agent": fingerprint["user_agent"],
+        "fingerprint": fingerprint,
+        "region": region.to_dict(),
+        "locale": region.locale,
+        "timezone_id": region.timezone_id,
     }
     env = {key: value for key, value in os.environ.items()
            if key.lower() not in {"http_proxy", "https_proxy", "all_proxy"}}
@@ -1315,7 +1396,7 @@ async def _capture_node_list_snapshot(
     try:
         if config.manual_list_handoff:
             return await _communicate_manual_capture(
-                process, request, page_index, expected_total, timeout, progress,
+                process, request, page_index, expected_total, timeout, progress, fingerprint,
             )
         stdout, _ = await asyncio.wait_for(
             process.communicate(json.dumps(request).encode("utf-8")), timeout=timeout
@@ -1410,6 +1491,7 @@ async def _wait_for_manual_resume(progress: Progress | None) -> None:
 async def _communicate_manual_capture(
     process: asyncio.subprocess.Process, request: dict[str, Any], page_index: int,
     expected_total: int | None, timeout: float, progress: Progress | None,
+    fingerprint: dict[str, Any],
 ) -> dict[str, Any]:
     """人工等待无自动超时；只在用户确认后验收，未通过就保持原窗口。"""
     if process.stdin is None or process.stdout is None or process.stderr is None:
@@ -1459,7 +1541,7 @@ async def _communicate_manual_capture(
             elif event.get("event") == "manual_snapshot":
                 snapshot = event.get("snapshot")
                 try:
-                    _validate_list_snapshot(snapshot, page_index, expected_total, progress=progress)
+                    _validate_list_snapshot(snapshot, page_index, expected_total, fingerprint=fingerprint, progress=progress)
                 except (ScrapeError, ValueError, TypeError, KeyError):
                     _emit(progress, "当前页面尚未通过列表验收；保留同一窗口，继续等待人工处理，不自动重试")
                     await send({"command": "hold"})
@@ -1507,12 +1589,12 @@ async def _capture_list_page_attempt(
         )
     else:
         snapshot = await _capture_node_list_snapshot(user_data_dir, page_index, config)
-    return _validate_list_snapshot(snapshot, page_index, expected_total, progress=progress)
+    return _validate_list_snapshot(snapshot, page_index, expected_total, fingerprint=_require_fingerprint(config), progress=progress)
 
 
 def _validate_list_snapshot(
     snapshot: dict[str, Any], page_index: int, expected_total: int | None,
-    *, progress: Progress | None = None,
+    *, fingerprint: dict[str, Any], progress: Progress | None = None,
 ) -> dict[str, Any]:
     from list_html import parse_list_html
 
@@ -1532,7 +1614,7 @@ def _validate_list_snapshot(
     except (TypeError, ValueError) as exc:
         raise ScrapeError("Node 已读取 HTML，但无法离线解析列表") from exc
     payload["stealth_probe"] = snapshot.get("stealth_probe")
-    probe_pass = _valid_stealth_probe(payload["stealth_probe"])
+    probe_pass = _valid_stealth_probe(payload["stealth_probe"], fingerprint)
     _emit(progress, f"HTML 单次快照：路径={urlsplit(snapshot['final_url']).path}，"
           f"商品卡={len(payload.get('cards') or [])}，结果区域={payload.get('result_view_count')}，"
           f"页面注入探针={'通过' if probe_pass else '未通过'}")
@@ -1548,7 +1630,7 @@ def _validate_list_snapshot(
         raise AccessChallengeError("Shopee 进入登录页；本轮不等待人工操作")
     if isinstance(status, int) and status >= 400:
         raise ScrapeError(f"HTTP {status}")
-    return _validate_list_payload(payload, page_index, expected_total)
+    return _validate_list_payload(payload, page_index, expected_total, fingerprint)
 
 
 async def _capture_list_page_with_profile(
@@ -1561,7 +1643,10 @@ async def _capture_list_page_with_profile(
 ) -> dict[str, Any]:
     """沿用昨日列表的有界重试：失败快照不接收，重启浏览器复用同一临时会话。"""
 
+    _require_fingerprint(config)
     attempt_config = replace(config, retries=1)
+    # dataclasses.replace 不复制 init=False 字段；重试必须继承本轮冻结快照。
+    attempt_config._fingerprint_json = config._fingerprint_json
     max_attempts = 1 if config.manual_list_handoff else config.retries
     for attempt in range(1, max_attempts + 1):
         try:
@@ -1668,7 +1753,7 @@ def _same_identity(value: Any, expected: tuple[str, str]) -> bool:
 
 
 def _validate_detail_payload(
-    payload: dict[str, Any], expected: tuple[str, str]
+    payload: dict[str, Any], expected: tuple[str, str], fingerprint: dict[str, Any]
 ) -> None:
     if payload.get("bff") is None:
         raise ScrapeError("缺少匹配的 PDP 数据")
@@ -1681,7 +1766,7 @@ def _validate_detail_payload(
             raise ScrapeError(f"{label} 存在，但不是有效的 Shopee PDP URL")
         if identity is not None and not _same_identity(identity, expected):
             raise ScrapeError(f"{label} 与请求商品不匹配")
-    if not _valid_stealth_probe(payload.get("stealth_probe")):
+    if not _valid_stealth_probe(payload.get("stealth_probe"), fingerprint):
         raise ScrapeError("浏览器 JS 注入探针与要求值不匹配")
 
 
@@ -1707,7 +1792,7 @@ async def _wait_for_detail(
         if payload.get("bff") is not None and _same_identity(
             payload.get("location_identity"), expected
         ):
-            _validate_detail_payload(payload, expected)
+            _validate_detail_payload(payload, expected, _require_fingerprint(config))
             await page.wait_for_timeout(config.detail_settle_ms)
             settled = await page.evaluate(
                 DETAIL_PAGE_SCRIPT,
@@ -1715,7 +1800,7 @@ async def _wait_for_detail(
             )
             if settled.get("challenge"):
                 raise AccessChallengeError("Shopee 当前访问线路在详情页进入验证页")
-            _validate_detail_payload(settled, expected)
+            _validate_detail_payload(settled, expected, _require_fingerprint(config))
             return settled
         await page.wait_for_timeout(350)
     candidates = (last or {}).get("candidates") or []
@@ -2249,7 +2334,7 @@ async def verify_access(
         targets = [known_cards[position] for position in positions]
     else:
         targets = _select_verification_targets(reference_workbook)
-    _stealth_script()
+    config = await _prepare_browser_config(config, progress)
     report: dict[str, Any] = {
         "mode": "verify_access", "list_pass": None if details_only else False,
         "details_only": details_only, "list_skipped": details_only, "list_pages_checked": 0,
@@ -2258,7 +2343,10 @@ async def verify_access(
         "full_crawl_completed": False, "workbook_written": False,
         "historical_list_preflight": config.historical_list_preflight and not details_only,
         "preflight_pass": False if config.historical_list_preflight and not details_only else None,
-        "injection_sha256": STEALTH_SHA256,
+        "injection_template_sha256": STEALTH_SHA256,
+        "injection_sha256": hashlib.sha256(_stealth_script(_require_fingerprint(config)).encode()).hexdigest(),
+        "browser_region": _require_region(config).to_dict(),
+        "browser_fingerprint": _require_fingerprint(config),
         "scope": ("仅已知商品清单首、中、末详情抽查；未访问列表，不验证全量详情完整性"
                   if details_only else
                   "仅列表首屏（可选历史第 2 页预访问）与跨页详情快照；不验证全店完整性或详情长驻稳定性"),
@@ -2348,7 +2436,7 @@ async def scrape_known_details(
         raise ValueError("已知商品全量详情刷新只允许单路访问")
     cards, metadata = _read_known_product_reference(reference_workbook)
     metadata["user_confirmed_no_new_products"] = True
-    _stealth_script()
+    config = await _prepare_browser_config(config, progress)
     _emit(progress, f"已知商品全量详情刷新：参考 {metadata['reference_date']} 清单，"
                     f"共 {len(cards)} 个唯一商品；不访问列表，不复用历史价格、月销、SKU 或图片")
     with _temporary_chrome_profile_base() as base_profile:
@@ -2400,6 +2488,7 @@ async def scrape_all(
     config = config or BrowserConfig()
     config.validate()
 
+    config = await _prepare_browser_config(config, progress)
     with _temporary_chrome_profile_base() as base_profile:
         cards, page_count, occurrences, duplicates = await _collect_listing(
             base_profile,

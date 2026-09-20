@@ -1,6 +1,7 @@
-"""可选本地 Chrome 原始注入基线测试；不读取真实档案、不访问 Shopee。
+"""可选本地 Chrome 完整注入/实际版本/8 套设备与地区测试；不访问 Shopee。
 
-运行：RUN_CHROME_RUNTIME_TESTS=1 .venv/bin/python -m unittest discover \
+运行：PLAYWRIGHT_NODEJS_PATH=/opt/homebrew/bin/node RUN_CHROME_RUNTIME_TESTS=1 \
+    .venv/bin/python -m unittest discover \
     -s tests -p test_proxy_access_runtime.py -v
 
 页面请求全部由内存 HTML 响应；唯一临时文件是空白私有 Chrome profile，结束后清理。
@@ -23,16 +24,48 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "skills/shopee-ugreen-topsales/scripts"
 sys.path.insert(0, str(SCRIPTS))
 import scraper  # noqa: E402
+from browser_fingerprint import APPROVED_PROFILE_IDS, load_fingerprint  # noqa: E402
+
+US_REGION = scraper.BrowserRegion("US", "en-US", ("en-US", "en"), "America/New_York")
+SG_REGION = scraper.BrowserRegion("SG", "en-SG", ("en-SG", "en"), "Asia/Singapore")
+PH_REGION = scraper.BrowserRegion("PH", "en-PH", ("en-PH", "en"), "Asia/Manila")
 
 
 NATIVE_SNAPSHOT = """
 (() => {
+    const getDescriptor = Object.getOwnPropertyDescriptor;
+    const getPrototype = Object.getPrototypeOf;
+    const userAgentData = navigator.userAgentData;
+    let userAgentDataOwner = navigator;
+    while (userAgentDataOwner && !getDescriptor(userAgentDataOwner, 'userAgentData')) {
+        userAgentDataOwner = getPrototype(userAgentDataOwner);
+    }
+    const userAgentDataPrototype = userAgentData && getPrototype(userAgentData);
+    const userAgentDataMembers = [
+        'brands', 'mobile', 'platform', 'getHighEntropyValues', 'toJSON',
+    ];
     Object.defineProperty(window, '__ugreen_test_native_api__', {
         value: {
             chrome: window.chrome,
             ownPropertyNames: Object.getOwnPropertyNames,
             plugins: navigator.plugins,
-            userAgentData: navigator.userAgentData,
+            getDescriptor,
+            getPrototype,
+            navigatorPrototype: getPrototype(navigator),
+            navigatorUserAgentDataDescriptor: getDescriptor(navigator, 'userAgentData'),
+            userAgentData,
+            userAgentDataConsecutiveReadSame: userAgentData === navigator.userAgentData,
+            userAgentDataOwner,
+            userAgentDataDescriptor: userAgentDataOwner &&
+                getDescriptor(userAgentDataOwner, 'userAgentData'),
+            userAgentDataConstructor: window.NavigatorUAData,
+            userAgentDataPrototype,
+            userAgentDataMembers: userAgentDataMembers.map(name => ({
+                name,
+                prototypeDescriptor: userAgentDataPrototype &&
+                    getDescriptor(userAgentDataPrototype, name),
+                ownDescriptor: userAgentData && getDescriptor(userAgentData, name),
+            })),
         },
         configurable: true,
     });
@@ -62,10 +95,17 @@ SCREEN_SCRIPT = """() => ({
     os.environ.get("RUN_CHROME_RUNTIME_TESTS") == "1",
     "仅在 RUN_CHROME_RUNTIME_TESTS=1 时运行本地 Chrome 注入基线测试",
 )
-class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
+class ChromeRuntimeTestCase(unittest.IsolatedAsyncioTestCase):
+    include_proxy_access = True
+    region = US_REGION
+    profile_id = "windows-intel"
+
     async def asyncSetUp(self) -> None:
         self.assertTrue(scraper.DEFAULT_CHROME.is_file(), "本机 Google Chrome 不存在")
-        self.script = scraper._stealth_script()
+        self.chrome_version = await scraper._chrome_version(scraper.DEFAULT_CHROME)
+        self.chrome_major = self.chrome_version.split(".", 1)[0]
+        self.fingerprint = load_fingerprint(self.profile_id, self.chrome_version, self.region)
+        self.script = scraper._stealth_script(self.fingerprint) if self.include_proxy_access else ""
         self.page_errors: list[str] = []
         self.routed_urls: list[str] = []
         self.observed_headers: list[dict[str, str]] = []
@@ -75,7 +115,9 @@ class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
         profile.mkdir(mode=0o700)
         # 同一 init 内先快照、再运行真正脚本，避免多个 init 的顺序未定义。
         with patch.object(scraper, "_stealth_script", return_value=NATIVE_SNAPSHOT + self.script):
-            self.context = await scraper._launch_context(scraper.BrowserConfig(), profile)
+            self.context = await scraper._launch_context(scraper.BrowserConfig(
+                region=self.region, browser_profile=self.profile_id, chrome_version=self.chrome_version,
+            ), profile)
         self.addAsyncCleanup(scraper._close_context, self.context)
 
         async def fulfill_locally(route) -> None:
@@ -114,17 +156,120 @@ class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await session.detach()
 
-    async def test_original_injection_blocks_and_historical_configuration(self) -> None:
+    async def _assert_asian_region_and_preserved_fingerprint(self) -> None:
+        """SG/PH 地区和选中的设备参数一致；不声称原生 UA-CH 模拟了虚拟 OS。"""
+        fp = self.fingerprint
+        values = await self.page.evaluate("""() => ({
+            language: navigator.language,
+            languages: Array.from(navigator.languages),
+            dateLocale: Intl.DateTimeFormat().resolvedOptions().locale,
+            numberLocale: Intl.NumberFormat().resolvedOptions().locale,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            winterOffset: new Date('2026-01-15T12:00:00Z').getTimezoneOffset(),
+            summerOffset: new Date('2026-07-15T12:00:00Z').getTimezoneOffset(),
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            vendor: navigator.vendor,
+            webdriverUndefined: navigator.webdriver === undefined,
+            hardwareConcurrency: navigator.hardwareConcurrency,
+            deviceMemory: navigator.deviceMemory,
+            maxTouchPoints: navigator.maxTouchPoints,
+            pdfViewerEnabled: navigator.pdfViewerEnabled,
+            pluginNames: navigator.plugins.map(plugin => plugin.name),
+            manifest: window.chrome.runtime.getManifest(),
+        })""")
+        self.assertEqual(values, {
+            "language": self.region.locale, "languages": list(self.region.languages),
+            "dateLocale": self.region.locale, "numberLocale": self.region.locale,
+            "timeZone": self.region.timezone_id, "winterOffset": -480, "summerOffset": -480,
+            "userAgent": fp["user_agent"], "platform": fp["platform"], "vendor": fp["vendor"],
+            "webdriverUndefined": True, "hardwareConcurrency": fp["hardware_concurrency"],
+            "deviceMemory": fp["device_memory"], "maxTouchPoints": fp["max_touch_points"],
+            "pdfViewerEnabled": fp["pdf_viewer_enabled"], "pluginNames": PLUGIN_NAMES,
+            "manifest": {"version": self.chrome_version},
+        })
+        self.assertRegex(values["userAgent"], rf"Chrome/{self.chrome_major}\.0\.0\.0(?: |$)")
+        width, height = fp["screen_width"], fp["screen_height"]
+        self.assertEqual(await self.page.evaluate(SCREEN_SCRIPT), {
+            "width": width, "height": height, "availWidth": width, "availHeight": height,
+            "innerWidth": width, "innerHeight": height, "outerWidth": width, "outerHeight": height,
+        })
+        webgl = await self.page.evaluate("""() => ['webgl', 'webgl2'].map(kind => {
+            const gl = document.createElement('canvas').getContext(kind);
+            return gl ? {kind, available: true, vendor: gl.getParameter(37445),
+                renderer: gl.getParameter(37446)} : {kind, available: false};
+        })""")
+        self.assertEqual(webgl, [
+            {"kind": kind, "available": True, "vendor": fp["webgl_vendor"],
+             "renderer": fp["webgl_renderer"]}
+            for kind in ("webgl", "webgl2")
+        ])
+        payload = await self.page.evaluate(
+            scraper.LIST_PAGE_SCRIPT, {"expected_shop_id": scraper.SHOP_ID},
+        )
+        self.assertTrue(scraper._valid_stealth_probe(payload.get("stealth_probe"), fp), payload)
+        native_platform = await self.page.evaluate("() => navigator.userAgentData.platform")
+        self.assertTrue(await self.page.evaluate("""() => {
+            const languages = navigator.languages;
+            languages.push('test-only');
+            return !navigator.languages.includes('test-only');
+        }"""), "每次 languages getter 应返回独立副本")
+        self.assertTrue(self.observed_headers)
+        for headers in self.observed_headers:
+            language_tags = [
+                part.split(";", 1)[0].strip()
+                for part in headers["accept-language"].split(",")
+            ]
+            self.assertEqual(language_tags[0], self.region.locale)
+            self.assertTrue(all(tag in self.region.languages for tag in language_tags), language_tags)
+            self.assertEqual(headers["user-agent"], fp["user_agent"])
+            self.assertEqual(headers["sec-ch-ua-platform"], f'"{native_platform}"')
+            self.assertEqual(headers["sec-ch-ua-mobile"], "?0")
+        self.assertEqual(self.page_errors, [])
+        self.assertTrue(self.routed_urls)
+        self.assertTrue(all(url.startswith("https://ugreen-runtime.invalid/") for url in self.routed_urls))
+
+
+class SingaporeRegionRuntimeTests(ChromeRuntimeTestCase):
+    region = SG_REGION
+
+    async def test_sg_region_matches_requests_and_preserves_other_fingerprint_fields(self) -> None:
+        await self._assert_asian_region_and_preserved_fingerprint()
+
+
+class PhilippinesRegionRuntimeTests(ChromeRuntimeTestCase):
+    region = PH_REGION
+
+    async def test_ph_region_matches_requests_and_preserves_other_fingerprint_fields(self) -> None:
+        await self._assert_asian_region_and_preserved_fingerprint()
+
+
+async def _test_selected_profile_singapore_offline(self) -> None:
+    """每套独立空 profile 验证 JS、请求 UA、地区、屏幕和 WebGL；缺少 WebGL 必须失败。"""
+    await self._assert_asian_region_and_preserved_fingerprint()
+
+
+# 每套独立用例，某一 OS/GPU 失败不会阻止其他套装留下各自的验证结果。
+for _profile_id in APPROVED_PROFILE_IDS:
+    _class_name = "FingerprintPool" + "".join(part.title() for part in _profile_id.split("-")) + "Tests"
+    globals()[_class_name] = type(_class_name, (ChromeRuntimeTestCase,), {
+        "__module__": __name__, "profile_id": _profile_id, "region": SG_REGION,
+        "test_selected_profile_singapore_offline": _test_selected_profile_singapore_offline,
+    })
+
+
+class ProxyAccessRuntimeTests(ChromeRuntimeTestCase):
+    async def test_complete_injection_blocks_and_current_configuration(self) -> None:
         with self.subTest("真实列表脚本的页面探针"):
             payload = await self.page.evaluate(
                 scraper.LIST_PAGE_SCRIPT, {"expected_shop_id": scraper.SHOP_ID},
             )
             self.assertTrue(
-                scraper._valid_stealth_probe(payload.get("stealth_probe")),
+                scraper._valid_stealth_probe(payload.get("stealth_probe"), self.fingerprint),
                 payload.get("stealth_probe"),
             )
 
-        with self.subTest("历史语言、马尼拉时区、Win32 和全部 navigator 注入值"):
+        with self.subTest("美式英语、纽约时区、Win32 和全部 navigator 注入值"):
             values = await self.page.evaluate("""() => ({
                 language: navigator.language,
                 languages: Array.from(navigator.languages),
@@ -141,18 +286,59 @@ class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 summerOffset: new Date('2026-07-15T12:00:00Z').getTimezoneOffset(),
             })""")
             self.assertEqual(values, {
-                "language": "en-US", "languages": ["en-US", "en", "zh-CN"], "platform": "Win32",
+                "language": "en-US", "languages": ["en-US", "en"], "platform": "Win32",
                 "vendor": "Google Inc.", "webdriverUndefined": True,
                 "hardwareConcurrency": 8, "deviceMemory": 8, "maxTouchPoints": 0,
-                "pdfViewerEnabled": True, "timeZone": "Asia/Manila", "locale": "en-PH",
-                "winterOffset": -480, "summerOffset": -480,
+                "pdfViewerEnabled": True, "timeZone": "America/New_York", "locale": "en-US",
+                "winterOffset": 300, "summerOffset": 240,
             })
 
-        with self.subTest("历史固定 UA 与请求一致；原生 Client Hints 保留实际 Chrome 版本"):
+        with self.subTest("原生 Client Hints getter、描述符及方法引用未被覆写"):
+            # 2026-09-18 无注入本地对照：Chrome 153 连续读取 userAgentData
+            # 返回不同对象，但 getter/原型/方法引用保持不变；不要求返回对象 ===。
+            preserved = await self.page.evaluate("""() => {
+                const saved = window.__ugreen_test_native_api__;
+                const descriptor = saved.getDescriptor;
+                const prototype = saved.getPrototype;
+                const sameDescriptor = (actual, original) => {
+                    if (!actual || !original) return actual === original;
+                    const keys = Reflect.ownKeys(original);
+                    return Reflect.ownKeys(actual).length === keys.length &&
+                        keys.every(key => actual[key] === original[key]);
+                };
+                let owner = navigator;
+                while (owner && !descriptor(owner, 'userAgentData')) {
+                    owner = prototype(owner);
+                }
+                const data = navigator.userAgentData;
+                return {
+                    nativeBaselinePresent: Boolean(saved.userAgentDataDescriptor &&
+                        typeof saved.userAgentDataDescriptor.get === 'function' &&
+                        saved.userAgentDataMembers.every(member => member.prototypeDescriptor)),
+                    navigatorPrototype: prototype(navigator) === saved.navigatorPrototype,
+                    noNewNavigatorShadow: sameDescriptor(
+                        descriptor(navigator, 'userAgentData'), saved.navigatorUserAgentDataDescriptor),
+                    getterOwner: owner === saved.userAgentDataOwner,
+                    getterDescriptor: sameDescriptor(
+                        descriptor(owner, 'userAgentData'), saved.userAgentDataDescriptor),
+                    constructor: window.NavigatorUAData === saved.userAgentDataConstructor,
+                    dataPrototype: prototype(data) === saved.userAgentDataPrototype,
+                    memberDescriptors: saved.userAgentDataMembers.every(member => sameDescriptor(
+                        descriptor(prototype(data), member.name), member.prototypeDescriptor)),
+                    noNewDataMemberShadows: saved.userAgentDataMembers.every(member => sameDescriptor(
+                        descriptor(data, member.name), member.ownDescriptor)),
+                };
+            }""")
+            self.assertEqual(preserved, {
+                "nativeBaselinePresent": True, "navigatorPrototype": True,
+                "noNewNavigatorShadow": True, "getterOwner": True, "getterDescriptor": True,
+                "constructor": True, "dataPrototype": True, "memberDescriptors": True,
+                "noNewDataMemberShadows": True,
+            })
+
+        with self.subTest("当前 UA 与请求一致；原生 Client Hints 保留实际 Chrome 版本"):
             values = await self.page.evaluate("""async () => ({
                 userAgent: navigator.userAgent,
-                originalUserAgentData: navigator.userAgentData ===
-                    window.__ugreen_test_native_api__.userAgentData,
                 brands: navigator.userAgentData.brands,
                 platform: navigator.userAgentData.platform,
                 mobile: navigator.userAgentData.mobile,
@@ -166,18 +352,16 @@ class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await session.detach()
             headers = self.observed_headers[0]
-            self.assertEqual(values["userAgent"], scraper.CHROME_USER_AGENT)
+            self.assertEqual(values["userAgent"], self.fingerprint["user_agent"])
             self.assertEqual(headers["user-agent"], values["userAgent"])
-            self.assertTrue(values["originalUserAgentData"])
             match = re.search(r"(?:Chrome|Chromium)/(\d+)\.", browser_version["product"])
             self.assertIsNotNone(match, browser_version["product"])
             native_major = match.group(1)
             self.assertIn("Windows NT 10.0; Win64; x64", values["userAgent"])
-            self.assertEqual(values["platform"], "Windows")
             self.assertFalse(values["mobile"])
-            self.assertEqual(headers["sec-ch-ua-platform"], '"Windows"')
+            self.assertEqual(headers["sec-ch-ua-platform"], f'"{values["platform"]}"')
             self.assertEqual(headers["sec-ch-ua-mobile"], "?0")
-            self.assertTrue(headers["accept-language"].startswith("en-PH"))
+            self.assertTrue(headers["accept-language"].startswith("en-US"))
             chromium_brands = [
                 brand for brand in values["brands"]
                 if brand["brand"] in {"Chromium", "Google Chrome"}
@@ -186,10 +370,14 @@ class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
             for brand in chromium_brands:
                 self.assertEqual(brand["version"], native_major)
                 self.assertIn(f'"{brand["brand"]}";v="{native_major}"', headers["sec-ch-ua"])
-            self.assertEqual(values["highEntropy"]["platform"], "Windows")
-            for brand in values["highEntropy"].get("fullVersionList", []):
-                if brand["brand"] in {"Chromium", "Google Chrome"}:
-                    self.assertEqual(brand["version"].split(".")[0], native_major)
+            self.assertEqual(values["highEntropy"]["platform"], values["platform"])
+            full_version_brands = [
+                brand for brand in values["highEntropy"].get("fullVersionList", [])
+                if brand["brand"] in {"Chromium", "Google Chrome"}
+            ]
+            self.assertTrue(full_version_brands)
+            for brand in full_version_brands:
+                self.assertEqual(brand["version"].split(".")[0], native_major)
             print("本地 Chrome 高熵观察（无站点访问）：", {
                 key: values["highEntropy"].get(key)
                 for key in ("architecture", "bitness", "platform", "platformVersion")
@@ -215,8 +403,8 @@ class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 };
             }""")
             self.assertTrue(values["originalReplaced"])
-            # 原始 fake manifest 的 122 按用户要求原样保留，并非当前 Chrome 版本。
-            self.assertEqual(values["manifest"], {"version": "122.0.0.0"})
+            # 兼容占位 manifest 使用实测完整版本，仍不是原生版本检测 API。
+            self.assertEqual(values["manifest"], {"version": self.chrome_version})
             for key in ("installedListener", "removedListener", "installListener", "downloadListener"):
                 self.assertEqual(values[key], "function")
             self.assertTrue(values["sendNoop"])
@@ -311,8 +499,8 @@ class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
             }""")
             for value in values:
                 self.assertTrue(value["available"], value)
-                self.assertEqual(value["vendor"], "Intel Inc.")
-                self.assertEqual(value["renderer"], "Intel Iris OpenGL Engine")
+                self.assertEqual(value["vendor"], self.fingerprint["webgl_vendor"])
+                self.assertEqual(value["renderer"], self.fingerprint["webgl_renderer"])
                 self.assertTrue(value["regularVendor"])
 
         with self.subTest("新 iframe document 继承完整注入"):
@@ -334,9 +522,9 @@ class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 runtimeManifest: window.chrome.runtime.getManifest(),
             })""")
             self.assertEqual(values, {
-                "language": "en-US", "languages": ["en-US", "en", "zh-CN"], "platform": "Win32",
-                "timeZone": "Asia/Manila", "webdriverUndefined": True,
-                "pluginNames": PLUGIN_NAMES, "runtimeManifest": {"version": "122.0.0.0"},
+                "language": "en-US", "languages": ["en-US", "en"], "platform": "Win32",
+                "timeZone": "America/New_York", "webdriverUndefined": True,
+                "pluginNames": PLUGIN_NAMES, "runtimeManifest": {"version": self.chrome_version},
             })
 
         with self.subTest("没有脚本错误，页面全部在本地响应"):
@@ -346,6 +534,77 @@ class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 all(url.startswith("https://ugreen-runtime.invalid/") for url in self.routed_urls),
                 self.routed_urls,
             )
+
+    async def test_actual_chrome_version_alignment(self) -> None:
+        """独立检查本机实际版本，不让其他子用例失败遮蔽版本结论。"""
+        values = await self.page.evaluate("""async () => ({
+            userAgent: navigator.userAgent,
+            manifest: window.chrome.runtime.getManifest(),
+            brands: navigator.userAgentData.brands,
+            highEntropy: await navigator.userAgentData.getHighEntropyValues(['fullVersionList']),
+        })""")
+        session = await self.context.new_cdp_session(self.page)
+        try:
+            browser_version = await session.send("Browser.getVersion")
+        finally:
+            await session.detach()
+        browser_match = re.search(r"(?:Chrome|Chromium)/(\d+)\.", browser_version["product"])
+        self.assertIsNotNone(browser_match, browser_version["product"])
+        self.assertEqual(browser_match.group(1), self.chrome_major)
+        self.assertEqual(browser_version["product"].split("/", 1)[1], self.chrome_version)
+        self.assertEqual(values["userAgent"], self.fingerprint["user_agent"])
+        self.assertRegex(values["userAgent"], rf"Chrome/{self.chrome_major}\.0\.0\.0(?: |$)")
+        headers = self.observed_headers[0]
+        self.assertEqual(headers["user-agent"], values["userAgent"])
+        self.assertEqual(values["manifest"], {"version": self.chrome_version})
+        brands = [
+            brand for brand in values["brands"]
+            if brand["brand"] in {"Chromium", "Google Chrome"}
+        ]
+        self.assertTrue(brands)
+        for brand in brands:
+            self.assertEqual(brand["version"], self.chrome_major)
+            self.assertIn(f'"{brand["brand"]}";v="{self.chrome_major}"', headers["sec-ch-ua"])
+        full_version_brands = [
+            brand for brand in values["highEntropy"].get("fullVersionList", [])
+            if brand["brand"] in {"Chromium", "Google Chrome"}
+        ]
+        self.assertTrue(full_version_brands)
+        for brand in full_version_brands:
+            self.assertEqual(brand["version"], self.chrome_version)
+
+    async def test_us_locale_timezone_and_request_language_alignment(self) -> None:
+        """只验证页面/请求地区信号；不能据此声称公网出口或站点判定在美国。"""
+        values = await self.page.evaluate("""() => ({
+            language: navigator.language,
+            languages: Array.from(navigator.languages),
+            dateLocale: Intl.DateTimeFormat().resolvedOptions().locale,
+            numberLocale: Intl.NumberFormat().resolvedOptions().locale,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            numberFormat: Intl.NumberFormat().format(1234567.89),
+            winterOffset: new Date('2026-01-15T12:00:00Z').getTimezoneOffset(),
+            summerOffset: new Date('2026-07-15T12:00:00Z').getTimezoneOffset(),
+            winterHour: new Date('2026-01-15T12:00:00Z').getHours(),
+            summerHour: new Date('2026-07-15T12:00:00Z').getHours(),
+        })""")
+        self.assertEqual(values, {
+            "language": "en-US", "languages": ["en-US", "en"],
+            "dateLocale": "en-US", "numberLocale": "en-US", "timeZone": "America/New_York",
+            "numberFormat": "1,234,567.89", "winterOffset": 300, "summerOffset": 240,
+            "winterHour": 7, "summerHour": 8,
+        })
+        self.assertTrue(self.observed_headers)
+        for headers in self.observed_headers:
+            with self.subTest(accept_language=headers.get("accept-language")):
+                language_tags = [
+                    part.split(";", 1)[0].strip()
+                    for part in headers["accept-language"].split(",")
+                ]
+                self.assertEqual(language_tags[0], "en-US")
+                self.assertTrue(all(tag in {"en-US", "en"} for tag in language_tags), language_tags)
+        self.assertEqual(self.page_errors, [])
+        self.assertTrue(self.routed_urls)
+        self.assertTrue(all(url.startswith("https://ugreen-runtime.invalid/") for url in self.routed_urls))
 
     @unittest.expectedFailure
     async def test_known_limitation_repeated_classic_script_is_not_idempotent(self) -> None:
@@ -426,6 +685,42 @@ class ProxyAccessRuntimeTests(unittest.IsolatedAsyncioTestCase):
             return false;
         }""")
         self.assertTrue(type_error)
+
+
+class NativeUserAgentDataControlTests(ChromeRuntimeTestCase):
+    include_proxy_access = False
+
+    async def test_without_injection_object_identity_is_not_api_preservation(self) -> None:
+        """保留无注入对照：返回新对象本身不表示原生 getter 或方法被覆写。"""
+        self.assertEqual(self.script, "")
+        values = await self.page.evaluate("""() => {
+            const saved = window.__ugreen_test_native_api__;
+            const data = navigator.userAgentData;
+            const descriptor = Object.getOwnPropertyDescriptor(
+                saved.userAgentDataOwner, 'userAgentData');
+            return {
+                initialConsecutiveReadSame: saved.userAgentDataConsecutiveReadSame,
+                currentConsecutiveReadSame: data === navigator.userAgentData,
+                originalObjectSame: data === saved.userAgentData,
+                getterSame: descriptor.get === saved.userAgentDataDescriptor.get,
+                descriptorFlagsSame: descriptor.set === saved.userAgentDataDescriptor.set &&
+                    descriptor.enumerable === saved.userAgentDataDescriptor.enumerable &&
+                    descriptor.configurable === saved.userAgentDataDescriptor.configurable,
+                ownShadowPresent: Object.hasOwn(navigator, 'userAgentData'),
+                prototypeSame: Object.getPrototypeOf(data) === saved.userAgentDataPrototype,
+                nativeMethodsSame: saved.userAgentDataMembers.filter(member =>
+                    ['getHighEntropyValues', 'toJSON'].includes(member.name)).every(member =>
+                    data[member.name] === member.prototypeDescriptor.value),
+            };
+        }""")
+        self.assertEqual(values, {
+            "initialConsecutiveReadSame": False, "currentConsecutiveReadSame": False,
+            "originalObjectSame": False, "getterSame": True, "descriptorFlagsSame": True,
+            "ownShadowPresent": False, "prototypeSame": True, "nativeMethodsSame": True,
+        })
+        self.assertEqual(self.page_errors, [])
+        self.assertTrue(self.routed_urls)
+        self.assertTrue(all(url.startswith("https://ugreen-runtime.invalid/") for url in self.routed_urls))
 
 
 if __name__ == "__main__":

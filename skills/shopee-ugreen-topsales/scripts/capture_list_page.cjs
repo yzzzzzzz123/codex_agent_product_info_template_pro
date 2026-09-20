@@ -7,12 +7,30 @@ const path = require('node:path');
 const {createHash} = require('node:crypto');
 const readline = require('node:readline');
 
-const STEALTH_SHA256 = '0917c37fcfba7718f79bd6ec9d63996b7e07c23e88fe19f87e3b096799ef9128';
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+const STEALTH_SHA256 = '670a595ce5f75286ea1d5af02c5c1aae3433745a2bc15ae744f926a80fbb215c';
+const PROFILE_IDS = ['windows-intel', 'windows-nvidia', 'windows-amd', 'macos-intel', 'macos-amd',
+  'linux-intel', 'linux-nvidia', 'linux-amd'];
+const PROFILE_FIELDS = ['id', 'ua_platform', 'platform', 'vendor', 'hardware_concurrency', 'device_memory',
+  'max_touch_points', 'pdf_viewer_enabled', 'screen_width', 'screen_height', 'webgl_vendor', 'webgl_renderer'];
+const OS_PLATFORMS = {
+  windows: {ua_platform: 'Windows NT 10.0; Win64; x64', platform: 'Win32'},
+  macos: {ua_platform: 'Macintosh; Intel Mac OS X 10_15_7', platform: 'MacIntel'},
+  linux: {ua_platform: 'X11; Linux x86_64', platform: 'Linux x86_64'},
+};
 const BLOCKED_STATUSES = new Set([403, 418, 429, 503]);
 const PROXY_ENV_NAMES = new Set(['http_proxy', 'https_proxy', 'all_proxy']);
 
-const STEALTH_PROBE = () => ({
+const STEALTH_PROBE = () => {
+  let webglVendor = null;
+  let webglRenderer = null;
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    if (gl) {
+      webglVendor = gl.getParameter(37445);
+      webglRenderer = gl.getParameter(37446);
+    }
+  } catch (_) { /* Missing WebGL is represented explicitly, never guessed. */ }
+  return {
   webdriver_is_undefined: navigator.webdriver === undefined,
   user_agent: navigator.userAgent,
   user_agent_data: navigator.userAgentData ? navigator.userAgentData.toJSON() : null,
@@ -23,11 +41,19 @@ const STEALTH_PROBE = () => ({
   plugin_count: navigator.plugins ? navigator.plugins.length : null,
   hardware_concurrency: navigator.hardwareConcurrency,
   device_memory: navigator.deviceMemory === undefined ? null : navigator.deviceMemory,
+  max_touch_points: navigator.maxTouchPoints,
+  pdf_viewer_enabled: navigator.pdfViewerEnabled,
   chrome_runtime_present: Boolean(window.chrome && window.chrome.runtime),
+  chrome_version: window.chrome && window.chrome.runtime
+    && typeof window.chrome.runtime.getManifest === 'function'
+    ? window.chrome.runtime.getManifest().version : null,
+  webgl_vendor: webglVendor,
+  webgl_renderer: webglRenderer,
   time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   screen_width: window.screen.width,
   screen_height: window.screen.height,
-});
+  };
+};
 
 class CaptureError extends Error {
   constructor(kind, message) {
@@ -76,6 +102,180 @@ function validateProfile(rawDirectory) {
   }
 }
 
+function validateRegion(input) {
+  const keys = ['country_code', 'languages', 'locale', 'timezone_id'];
+  if (!input || typeof input !== 'object' || Array.isArray(input)
+      || JSON.stringify(Object.keys(input).sort()) !== JSON.stringify(keys)
+      || typeof input.country_code !== 'string' || !/^[A-Z]{2}$/.test(input.country_code)
+      || typeof input.locale !== 'string' || !/^[a-z]{2,3}(?:-[A-Z][a-z]{3})?-[A-Z]{2}$/.test(input.locale)
+      || !Array.isArray(input.languages) || input.languages.length !== 2
+      || input.languages[0] !== input.locale || input.languages[1] !== input.locale.split('-')[0]
+      || typeof input.timezone_id !== 'string'
+      || !/^(?:[A-Za-z_]+\/[A-Za-z_+\d-]+(?:\/[A-Za-z_+\d-]+)?|UTC)$/.test(input.timezone_id)) {
+    configError('列表采集需要完整且一致的本轮出口地区配置');
+  }
+  try {
+    const locale = new Intl.Locale(input.locale);
+    if (locale.toString() !== input.locale || locale.region !== input.country_code
+        || Intl.DateTimeFormat.supportedLocalesOf([input.locale]).length !== 1) {
+      configError('列表采集地区语言与出口国家不一致或不受支持');
+    }
+    new Intl.DateTimeFormat(input.locale, {timeZone: input.timezone_id}).resolvedOptions();
+  } catch (error) {
+    if (error instanceof CaptureError) throw error;
+    configError('列表采集地区语言或 IANA 时区无效');
+  }
+  return Object.freeze({...input, languages: Object.freeze([...input.languages])});
+}
+
+function exactKeys(value, keys) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+}
+
+function canonicalJson(value) {
+  const sort = item => {
+    if (Array.isArray(item)) return item.map(sort);
+    if (item && typeof item === 'object') {
+      return Object.fromEntries(Object.keys(item).sort().map(key => [key, sort(item[key])]));
+    }
+    return item;
+  };
+  return JSON.stringify(sort(value));
+}
+
+function uniqueJson(raw) {
+  const result = JSON.parse(raw);
+  // JSON.parse alone silently accepts duplicate keys; scan the already-valid
+  // JSON token stream so it cannot disagree with Python's strict catalog reader.
+  const tokens = raw.match(/"(?:\\[\s\S]|[^"\\])*"|[{}\[\]:,]|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g);
+  let index = 0;
+  const visit = () => {
+    const token = tokens[index++];
+    if (token === '{') {
+      const keys = new Set();
+      if (tokens[index] === '}') { index++; return; }
+      while (true) {
+        const key = JSON.parse(tokens[index++]);
+        if (keys.has(key)) throw new Error('duplicate JSON key');
+        keys.add(key);
+        index++; // colon; syntax was checked by JSON.parse above.
+        visit();
+        if (tokens[index++] === '}') return;
+      }
+    }
+    if (token === '[') {
+      if (tokens[index] === ']') { index++; return; }
+      while (true) {
+        visit();
+        if (tokens[index++] === ']') return;
+      }
+    }
+  };
+  visit();
+  return result;
+}
+
+function compatibleGraphics(profile) {
+  const [osName, gpuName] = profile.id.split('-');
+  const vendor = profile.webgl_vendor;
+  const renderer = profile.webgl_renderer;
+  if (osName === 'windows') {
+    const token = {intel: 'Intel', nvidia: 'NVIDIA', amd: 'AMD'}[gpuName];
+    return vendor === `Google Inc. (${token})` && renderer.startsWith('ANGLE (')
+      && renderer.includes(token) && renderer.includes('Direct3D11') && renderer.includes('D3D11')
+      && !['OpenGL Engine', 'Mesa', 'Metal'].some(value => renderer.includes(value));
+  }
+  if (osName === 'macos') {
+    const [expectedVendor, prefix] = gpuName === 'intel' ? ['Intel Inc.', 'Intel ']
+      : ['ATI Technologies Inc.', 'AMD Radeon '];
+    return vendor === expectedVendor && renderer.startsWith(prefix) && renderer.endsWith(' OpenGL Engine')
+      && !renderer.includes('Direct3D') && !renderer.includes('Apple');
+  }
+  if (gpuName === 'intel') return vendor === 'Intel' && renderer.startsWith('Mesa Intel(')
+    && !renderer.includes('Direct3D') && !renderer.includes('OpenGL Engine');
+  if (gpuName === 'nvidia') return vendor === 'NVIDIA Corporation' && renderer.startsWith('NVIDIA ')
+    && renderer.endsWith('/PCIe/SSE2') && !renderer.includes('Direct3D');
+  return vendor === 'AMD' && renderer.startsWith('AMD Radeon ') && renderer.includes('radeonsi')
+    && !renderer.includes('Direct3D') && !renderer.includes('OpenGL Engine');
+}
+
+function loadFingerprintProfiles() {
+  let catalog;
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, 'browser-profiles.json'), 'utf8');
+    if (Buffer.byteLength(raw, 'utf8') > 64 * 1024) configError('浏览器配置目录超过大小上限');
+    catalog = uniqueJson(raw);
+  } catch (_) {
+    configError('无法读取受控浏览器配置目录');
+  }
+  if (!exactKeys(catalog, ['schema_version', 'profiles']) || catalog.schema_version !== 1
+      || !Array.isArray(catalog.profiles) || catalog.profiles.length !== PROFILE_IDS.length) {
+    configError('浏览器配置目录结构无效');
+  }
+  const profiles = new Map();
+  for (const profile of catalog.profiles) {
+    if (!exactKeys(profile, PROFILE_FIELDS) || !PROFILE_IDS.includes(profile.id) || profiles.has(profile.id)) {
+      configError('浏览器配置目录包含缺失、重复或非批准套件');
+    }
+    const expectedOS = OS_PLATFORMS[profile.id.split('-')[0]];
+    if (profile.ua_platform !== expectedOS.ua_platform || profile.platform !== expectedOS.platform
+        || profile.vendor !== 'Google Inc.' || typeof profile.pdf_viewer_enabled !== 'boolean'
+        || !Number.isSafeInteger(profile.hardware_concurrency)
+        || ![2, 4, 8, 12, 16, 24, 32].includes(profile.hardware_concurrency)
+        || ![1, 2, 4, 8].includes(profile.device_memory)
+        || profile.max_touch_points !== 0
+        || !Number.isSafeInteger(profile.screen_width) || profile.screen_width < 1024 || profile.screen_width > 7680
+        || !Number.isSafeInteger(profile.screen_height) || profile.screen_height < 600 || profile.screen_height > 4320
+        || profile.screen_width / profile.screen_height < 1.2 || profile.screen_width / profile.screen_height > 2.5
+        || !['webgl_vendor', 'webgl_renderer'].every(key => typeof profile[key] === 'string'
+          && /^[\x20-\x7e]{1,512}$/.test(profile[key]) && profile[key].trim() === profile[key])
+        || !compatibleGraphics(profile)) {
+      configError('浏览器配置目录存在无效或不成套的字段');
+    }
+    profiles.set(profile.id, profile);
+  }
+  return profiles;
+}
+
+function validateFingerprint(input, region) {
+  const fields = ['profile_id', 'chrome_version', 'user_agent', 'region',
+    ...PROFILE_FIELDS.filter(key => !['id', 'ua_platform'].includes(key))];
+  if (!exactKeys(input, fields) || typeof input.profile_id !== 'string'
+      || typeof input.chrome_version !== 'string'
+      || !/^[1-9]\d{0,3}\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/.test(input.chrome_version)) {
+    configError('列表采集需要完整且有效的本轮浏览器套件');
+  }
+  const profile = loadFingerprintProfiles().get(input.profile_id);
+  if (!profile) configError('列表采集浏览器套件不在批准目录中');
+  const {id, ua_platform, ...details} = profile;
+  const expected = {
+    profile_id: id,
+    chrome_version: input.chrome_version,
+    user_agent: `Mozilla/5.0 (${ua_platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${input.chrome_version.split('.')[0]}.0.0.0 Safari/537.36`,
+    ...details,
+    region,
+  };
+  if (canonicalJson(input) !== canonicalJson(expected)) {
+    configError('列表采集浏览器字段与本轮套件、版本或地区不一致');
+  }
+  return Object.freeze(expected);
+}
+
+function validatedInitScript(fingerprint) {
+  let template;
+  try {
+    template = fs.readFileSync(path.join(__dirname, 'proxy-access.js'), 'utf8');
+  } catch (_) {
+    configError('无法读取列表采集初始化模板');
+  }
+  if (createHash('sha256').update(template, 'utf8').digest('hex') !== STEALTH_SHA256
+      || template.split('__UGREEN_FINGERPRINT__').length !== 2) {
+    configError('列表采集初始化模板与批准版本不一致');
+  }
+  return template.replace('__UGREEN_FINGERPRINT__', () => canonicalJson(fingerprint));
+}
+
 function validateConfig(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     configError('列表采集配置必须是单个 JSON 对象');
@@ -87,9 +287,10 @@ function validateConfig(input) {
       configError('列表采集需要现有 Playwright 模块与系统 Chrome 的绝对路径');
     }
   }
-  if (typeof config.init_script !== 'string'
-      || createHash('sha256').update(config.init_script, 'utf8').digest('hex') !== STEALTH_SHA256) {
-    configError('列表采集初始化脚本与已核验原始版本不一致');
+  config.region = validateRegion(config.region);
+  config.fingerprint = validateFingerprint(config.fingerprint, config.region);
+  if (typeof config.init_script !== 'string' || config.init_script !== validatedInitScript(config.fingerprint)) {
+    configError('列表采集初始化脚本与本轮浏览器套件及地区模板不一致');
   }
   try {
     const url = new URL(config.url);
@@ -115,12 +316,20 @@ function validateConfig(input) {
       || !Number.isSafeInteger(config.post_load_wait_ms) || config.post_load_wait_ms < 15000) {
     configError('列表采集参数无效；导航后必须完整等待至少 15 秒');
   }
-  config.user_agent = config.user_agent ?? USER_AGENT;
-  config.locale = config.locale ?? 'en-PH';
-  config.timezone_id = config.timezone_id ?? 'Asia/Manila';
-  if (config.user_agent !== USER_AGENT || config.locale !== 'en-PH'
-      || config.timezone_id !== 'Asia/Manila') {
-    configError('列表采集必须沿用已核验的历史浏览器参数');
+  if ((Object.hasOwn(config, 'user_agent') && config.user_agent !== config.fingerprint.user_agent)
+      || (Object.hasOwn(config, 'locale') && config.locale !== config.region.locale)
+      || (Object.hasOwn(config, 'timezone_id') && config.timezone_id !== config.region.timezone_id)) {
+    configError('列表采集参数必须与本轮浏览器套件及地区一致');
+  }
+  config.user_agent = config.fingerprint.user_agent;
+  config.locale = config.region.locale;
+  config.timezone_id = config.region.timezone_id;
+  const dimensions = {width: config.fingerprint.screen_width, height: config.fingerprint.screen_height};
+  for (const field of ['viewport', 'screen']) {
+    if (Object.hasOwn(config, field) && canonicalJson(config[field]) !== canonicalJson(dimensions)) {
+      configError('列表采集窗口尺寸与本轮浏览器套件不一致');
+    }
+    config[field] = dimensions;
   }
   return config;
 }
@@ -299,8 +508,8 @@ async function capture(input, injectedDependencies = {}) {
       userAgent: config.user_agent,
       locale: config.locale,
       timezoneId: config.timezone_id,
-      viewport: {width: 1366, height: 768},
-      screen: {width: 1366, height: 768},
+      viewport: config.viewport,
+      screen: config.screen,
     });
     await context.addInitScript(config.init_script);
     const startupPageCount = context.pages().length;

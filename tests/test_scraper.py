@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import sys
 import tempfile
 import unittest
@@ -17,6 +18,13 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "skills/shopee-ugreen-topsales/scripts"
 sys.path.insert(0, str(SCRIPTS))
 import scraper  # noqa: E402
+
+US_REGION = scraper.BrowserRegion("US", "en-US", ("en-US", "en"), "America/New_York")
+FIXTURE_VERSION = "153.0.8010.50"
+
+
+def fingerprint(region=US_REGION, profile_id="windows-intel") -> dict:
+    return scraper.load_fingerprint(profile_id, FIXTURE_VERSION, region)
 
 
 def card(item_id: str = "100", source_page: int = 0) -> scraper.ProductCard:
@@ -37,8 +45,10 @@ def card(item_id: str = "100", source_page: int = 0) -> scraper.ProductCard:
 
 def probe() -> dict:
     return {
+        **{key: value for key, value in fingerprint().items()
+           if key not in {"region", "profile_id"}},
         "webdriver_is_undefined": True,
-        "user_agent": scraper.CHROME_USER_AGENT,
+        "user_agent": fingerprint()["user_agent"],
         "user_agent_data": {
             "brands": [
                 {"brand": "Google Chrome", "version": "153"},
@@ -48,14 +58,14 @@ def probe() -> dict:
             "platform": "Windows", "mobile": False,
         },
         "language": "en-US",
-        "languages": ["en-US", "en", "zh-CN"],
+        "languages": ["en-US", "en"],
         "platform": "Win32",
         "vendor": "Google Inc.",
         "plugin_count": 5,
         "hardware_concurrency": 8,
         "device_memory": 8,
         "chrome_runtime_present": True,
-        "time_zone": "Asia/Manila",
+        "time_zone": "America/New_York",
         "screen_width": 1366,
         "screen_height": 768,
     }
@@ -105,13 +115,17 @@ class ConfigurationTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertIsNone(scraper._url_identity(url))
 
-    def test_original_init_script_bytes_are_exact_and_not_simplified(self) -> None:
-        script = scraper._stealth_script().encode("utf-8")
-        self.assertEqual(len(script), 4847)
+    def test_current_init_script_preserves_blocks_and_uses_one_payload_token(self) -> None:
+        script = scraper._stealth_template().encode("utf-8")
+        self.assertEqual(len(script), 5157)
         self.assertEqual(
             hashlib.sha256(script).hexdigest(),
-            "0917c37fcfba7718f79bd6ec9d63996b7e07c23e88fe19f87e3b096799ef9128",
+            scraper.STEALTH_SHA256,
         )
+        self.assertEqual(script.count(b"__UGREEN_FINGERPRINT__"), 1)
+        for block in (b"'webdriver'", b"Object.getOwnPropertyNames", b"window.chrome =",
+                      b"originalPermissionQuery", b"'plugins'", b"'languages'", b"patchWebGL"):
+            self.assertIn(block, script)
 
     def test_user_agent_tracks_chrome_major_without_randomization(self) -> None:
         for version in ("153.0.8010.50", "154.0.10.20"):
@@ -125,26 +139,27 @@ class ConfigurationTests(unittest.TestCase):
                 with self.assertRaises(scraper.ScrapeError):
                     scraper._windows_chrome_user_agent(version)
 
-    def test_probe_requires_historical_fields_without_matching_native_chrome_major(self) -> None:
-        self.assertTrue(scraper._valid_stealth_probe(probe()))
-        self.assertIn("Chrome/122.0.0.0", probe()["user_agent"])
+    def test_probe_requires_current_153_user_agent_and_existing_fields(self) -> None:
+        self.assertTrue(scraper._valid_stealth_probe(probe(), fingerprint()))
+        self.assertIn("Chrome/153.0.0.0", probe()["user_agent"])
         self.assertEqual(probe()["user_agent_data"]["brands"][0]["version"], "153")
         for key, value in (
-            ("language", "en-PH"), ("languages", ["en-US", "en"]),
-            ("time_zone", "America/New_York"), ("platform", "MacIntel"),
+            ("language", "en-PH"), ("languages", ["en-US", "en", "zh-CN"]),
+            ("time_zone", "Asia/Manila"), ("platform", "MacIntel"),
             ("plugin_count", 0), ("chrome_runtime_present", False),
-            ("user_agent", scraper._windows_chrome_user_agent("153.0.8010.50")),
+            ("user_agent", scraper._windows_chrome_user_agent("122.0.0.0")),
+            ("user_agent", scraper._windows_chrome_user_agent("154.0.10.20")),
         ):
             with self.subTest(key=key):
-                self.assertFalse(scraper._valid_stealth_probe({**probe(), key: value}))
+                self.assertFalse(scraper._valid_stealth_probe({**probe(), key: value}, fingerprint()))
 
     def test_changed_init_script_is_rejected(self) -> None:
         with patch.object(Path, "read_bytes", return_value=b"simplified"):
             with self.assertRaisesRegex(scraper.ScrapeError, "哈希不匹配"):
-                scraper._stealth_script()
+                scraper._stealth_script(fingerprint())
 
     def test_default_is_single_worker_and_slow_access(self) -> None:
-        config = scraper.BrowserConfig(chrome_executable=Path(__file__))
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__))
         config.validate()
         self.assertEqual(config.detail_shards, 1)
         self.assertEqual(config.list_interval_ms, 10_000)
@@ -157,7 +172,7 @@ class ConfigurationTests(unittest.TestCase):
         for field in ("list_interval_ms", "detail_interval_ms"):
             for interval in (9999, 0, -1):
                 with self.subTest(field=field, interval=interval):
-                    config = scraper.BrowserConfig(
+                    config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION,
                         chrome_executable=Path(__file__), **{field: interval}
                     )
                     with self.assertRaisesRegex(ValueError, "不得少于 10 秒"):
@@ -251,22 +266,22 @@ class BrowserStartupTests(unittest.IsolatedAsyncioTestCase):
         manager = SimpleNamespace(start=AsyncMock(return_value=playwright))
         with (
             patch.object(scraper, "async_playwright", return_value=manager),
-            patch.object(scraper, "_chrome_user_agent", new_callable=AsyncMock) as version_reader,
+            patch.object(scraper, "_chrome_version", new_callable=AsyncMock) as version_reader,
         ):
             result = await scraper._launch_context(
-                scraper.BrowserConfig(chrome_executable=Path(__file__)),
+                scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__)),
                 Path("/unused-fixture-profile"),
             )
 
         self.assertIs(result, context)
         options = playwright.chromium.launch_persistent_context.await_args.kwargs
-        self.assertEqual(options["user_agent"], scraper.CHROME_USER_AGENT)
-        self.assertEqual(options["locale"], "en-PH")
-        self.assertEqual(options["timezone_id"], "Asia/Manila")
+        self.assertEqual(options["user_agent"], fingerprint()["user_agent"])
+        self.assertEqual(options["locale"], "en-US")
+        self.assertEqual(options["timezone_id"], "America/New_York")
         version_reader.assert_not_awaited()
         self.assertNotIn("extra_http_headers", options)
         context.add_init_script.assert_awaited_once_with(
-            script=scraper._stealth_script()
+            script=scraper._stealth_script(fingerprint())
         )
         default_page.goto.assert_not_awaited()
         default_page.close.assert_not_awaited()
@@ -279,8 +294,8 @@ class BrowserStartupTests(unittest.IsolatedAsyncioTestCase):
             returncode=0,
         )
         with patch.object(asyncio, "create_subprocess_exec", new=AsyncMock(return_value=process)) as run:
-            ua = await scraper._chrome_user_agent(Path("/fixture/Google Chrome"))
-        self.assertEqual(ua, scraper._windows_chrome_user_agent("153.0.8010.50"))
+            ua = await scraper._chrome_version(Path("/fixture/Google Chrome"))
+        self.assertEqual(ua, FIXTURE_VERSION)
         self.assertEqual(run.await_args.args, ("/fixture/Google Chrome", "--version"))
 
     async def test_unreadable_version_never_falls_back_to_stale_user_agent(self) -> None:
@@ -291,7 +306,7 @@ class BrowserStartupTests(unittest.IsolatedAsyncioTestCase):
                 )
                 with patch.object(asyncio, "create_subprocess_exec", new=AsyncMock(return_value=process)):
                     with self.assertRaises(scraper.ScrapeError):
-                        await scraper._chrome_user_agent(Path("/fixture/Chrome"))
+                        await scraper._chrome_version(Path("/fixture/Chrome"))
 
     async def test_version_timeout_and_cancellation_reap_the_process(self) -> None:
         for error, expected in (
@@ -305,7 +320,7 @@ class BrowserStartupTests(unittest.IsolatedAsyncioTestCase):
                 )
                 with patch.object(asyncio, "create_subprocess_exec", new=AsyncMock(return_value=process)):
                     with self.assertRaises(expected):
-                        await scraper._chrome_user_agent(Path("/fixture/Chrome"))
+                        await scraper._chrome_version(Path("/fixture/Chrome"))
                 process.kill.assert_called_once_with()
                 process.wait.assert_awaited_once_with()
 
@@ -322,7 +337,7 @@ class DetailReadinessTests(unittest.IsolatedAsyncioTestCase):
         events.attach_mock(page.evaluate, "evaluate")
         events.attach_mock(page.wait_for_timeout, "wait")
 
-        result = await scraper._wait_for_detail(page, card(), scraper.BrowserConfig())
+        result = await scraper._wait_for_detail(page, card(), scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION))
 
         self.assertIs(result, settled)
         self.assertEqual(page.wait_for_timeout.await_args_list, [call(350), call(300)])
@@ -339,14 +354,14 @@ class DetailReadinessTests(unittest.IsolatedAsyncioTestCase):
         page = FakePage()
         page.evaluate.side_effect = [detail_payload(), detail_payload("999")]
         with self.assertRaisesRegex(scraper.ScrapeError, "最终页面 URL"):
-            await scraper._wait_for_detail(page, card(), scraper.BrowserConfig())
+            await scraper._wait_for_detail(page, card(), scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION))
         page.wait_for_timeout.assert_awaited_once_with(300)
 
     async def test_second_snapshot_challenge_is_rejected(self) -> None:
         page = FakePage()
         page.evaluate.side_effect = [detail_payload(), {"challenge": True}]
         with self.assertRaises(scraper.AccessChallengeError):
-            await scraper._wait_for_detail(page, card(), scraper.BrowserConfig())
+            await scraper._wait_for_detail(page, card(), scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION))
 
     async def test_initial_canonical_mismatch_does_not_settle(self) -> None:
         page = FakePage()
@@ -356,7 +371,7 @@ class DetailReadinessTests(unittest.IsolatedAsyncioTestCase):
         })
         page.evaluate.return_value = payload
         with self.assertRaisesRegex(scraper.ScrapeError, "canonical_identity"):
-            await scraper._wait_for_detail(page, card(), scraper.BrowserConfig())
+            await scraper._wait_for_detail(page, card(), scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION))
         page.wait_for_timeout.assert_not_awaited()
 
 
@@ -365,7 +380,7 @@ class LoginWindowTests(unittest.IsolatedAsyncioTestCase):
         page = FakePage("https://shopee.ph/buyer/login")
         with patch("builtins.print") as output:
             with self.assertRaisesRegex(scraper.AccessChallengeError, "不等待人工操作"):
-                await scraper._wait_for_login(page, scraper.BrowserConfig(), scraper.STORE_URL)
+                await scraper._wait_for_login(page, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), scraper.STORE_URL)
         page.wait_for_timeout.assert_not_awaited()
         page.goto.assert_not_awaited()
         output.assert_not_called()
@@ -379,7 +394,7 @@ class LoginWindowTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(url=url):
                 page = FakePage(url)
                 with self.assertRaisesRegex(scraper.AccessChallengeError, "不等待人工操作"):
-                    await scraper._wait_for_login(page, scraper.BrowserConfig(), scraper.STORE_URL)
+                    await scraper._wait_for_login(page, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), scraper.STORE_URL)
                 page.wait_for_timeout.assert_not_awaited()
                 page.goto.assert_not_awaited()
 
@@ -387,7 +402,7 @@ class LoginWindowTests(unittest.IsolatedAsyncioTestCase):
         for url in (scraper.STORE_URL, "https://shopee.ph/traffic/error", "about:blank"):
             with self.subTest(url=url):
                 page = FakePage(url)
-                result = await scraper._wait_for_login(page, scraper.BrowserConfig(), scraper.STORE_URL)
+                result = await scraper._wait_for_login(page, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), scraper.STORE_URL)
                 self.assertFalse(result)
                 page.wait_for_timeout.assert_not_awaited()
                 page.goto.assert_not_awaited()
@@ -401,7 +416,7 @@ class LoginWindowTests(unittest.IsolatedAsyncioTestCase):
                     page.context._ugreen_login_waited = True
                 with self.assertRaises(scraper.AccessChallengeError):
                     await scraper._wait_for_login(
-                        page, scraper.BrowserConfig(headless=headless), scraper.STORE_URL
+                        page, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, headless=headless), scraper.STORE_URL
                     )
                 page.wait_for_timeout.assert_not_awaited()
                 page.goto.assert_not_awaited()
@@ -552,7 +567,7 @@ class SecondTabListingTests(unittest.IsolatedAsyncioTestCase):
                     pages=startup_pages,
                     new_page=AsyncMock(return_value=listing_page),
                 )
-                config = scraper.BrowserConfig(chrome_executable=Path(__file__))
+                config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__))
                 payload = {"total": 28, "cards": [object()] * 30}
                 load = AsyncMock(return_value=payload)
                 if fails:
@@ -586,7 +601,7 @@ class SecondTabListingTests(unittest.IsolatedAsyncioTestCase):
             pages=[],
             new_page=AsyncMock(side_effect=[first_page, second_page])
         )
-        config = scraper.BrowserConfig(chrome_executable=Path(__file__))
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__))
         payload = {"total": 28, "cards": [object()] * 30}
         with patch.object(
             scraper,
@@ -613,7 +628,7 @@ class SecondTabListingTests(unittest.IsolatedAsyncioTestCase):
             pages=[],
             new_page=AsyncMock(side_effect=[first_page, second_page])
         )
-        config = scraper.BrowserConfig(chrome_executable=Path(__file__))
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__))
         with patch.object(
             scraper,
             "_load_list_page",
@@ -638,7 +653,7 @@ class SecondTabListingTests(unittest.IsolatedAsyncioTestCase):
             pages=[],
             new_page=AsyncMock(side_effect=[first_page, second_page])
         )
-        config = scraper.BrowserConfig(chrome_executable=Path(__file__))
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__))
         denial = scraper.AccessChallengeError("列表页出现验证码")
         with patch.object(
             scraper,
@@ -660,7 +675,7 @@ class SecondTabListingTests(unittest.IsolatedAsyncioTestCase):
             pages=[],
             new_page=AsyncMock(side_effect=[first_page, RuntimeError("新标签页创建失败")])
         )
-        config = scraper.BrowserConfig(chrome_executable=Path(__file__))
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__))
         with patch.object(scraper, "_load_list_page", new_callable=AsyncMock) as load:
             with self.assertRaisesRegex(RuntimeError, "新标签页创建失败"):
                 await scraper._load_list_page_with_extra_tab(
@@ -684,7 +699,7 @@ class SecondTabListingTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(scraper, "_load_list_page", new=AsyncMock(side_effect=failure)):
                     with self.assertRaises(scraper.ScrapeError) as raised:
                         await scraper._load_list_page_with_extra_tab(
-                            context, 0, scraper.BrowserConfig(), None, progress=progress
+                            context, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None, progress=progress
                         )
                 self.assertIs(raised.exception, failure)
                 listing_page.evaluate.assert_not_awaited()
@@ -734,7 +749,7 @@ class ListReadinessTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(scraper, "_wait_for_login", new_callable=AsyncMock) as login:
             result = await scraper._load_list_page(
-                page, 0, scraper.BrowserConfig(), None
+                page, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None
             )
 
         self.assertIs(result, payload)
@@ -756,7 +771,7 @@ class ListReadinessTests(unittest.IsolatedAsyncioTestCase):
 
         page.wait_for_timeout.side_effect = redirect_to_challenge
         with self.assertRaises(scraper.AccessChallengeError):
-            await scraper._load_list_page(page, 0, scraper.BrowserConfig(), None)
+            await scraper._load_list_page(page, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None)
 
         page.wait_for_timeout.assert_awaited_once_with(15_000)
         page.evaluate.assert_awaited_once()
@@ -783,7 +798,7 @@ class ListReadinessTests(unittest.IsolatedAsyncioTestCase):
                 events.attach_mock(page.evaluate, "evaluate")
                 with patch.object(scraper, "_wait_for_login", new_callable=AsyncMock) as login:
                     with self.assertRaises(error_type):
-                        await scraper._load_list_page(page, 0, scraper.BrowserConfig(), None)
+                        await scraper._load_list_page(page, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None)
                 self.assertEqual([entry[0] for entry in events.mock_calls], ["goto", "wait", "evaluate"])
                 page.wait_for_timeout.assert_awaited_once_with(15_000)
                 login.assert_not_awaited()
@@ -795,7 +810,7 @@ class ListReadinessTests(unittest.IsolatedAsyncioTestCase):
         watch = scraper._watch_access(page)
         watch.error = "商品接口拒绝访问：HTTP 429"
         with self.assertRaisesRegex(scraper.AccessChallengeError, "HTTP 429"):
-            await scraper._load_list_page(page, 0, scraper.BrowserConfig(), None)
+            await scraper._load_list_page(page, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None)
         self.assertEqual(watch.error, "商品接口拒绝访问：HTTP 429")
         page.wait_for_timeout.assert_awaited_once_with(15_000)
         page.evaluate.assert_awaited_once()
@@ -825,7 +840,7 @@ class ListReadinessTests(unittest.IsolatedAsyncioTestCase):
                 page.goto.return_value = SimpleNamespace(status=200)
                 page.evaluate.return_value = {**self.ready_payload(), **change}
                 with self.assertRaises(scraper.ScrapeError):
-                    await scraper._load_list_page(page, 0, scraper.BrowserConfig(), None)
+                    await scraper._load_list_page(page, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None)
                 page.goto.assert_awaited_once()
                 page.wait_for_timeout.assert_awaited_once_with(15_000)
                 page.evaluate.assert_awaited_once_with(
@@ -850,7 +865,7 @@ class ListReadinessTests(unittest.IsolatedAsyncioTestCase):
                 payload["cards"][0].update(change)
                 page.evaluate.return_value = payload
                 with self.assertRaises(scraper.ScrapeError):
-                    await scraper._load_list_page(page, 0, scraper.BrowserConfig(), None)
+                    await scraper._load_list_page(page, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None)
                 page.evaluate.assert_awaited_once()
 
     async def test_total_change_and_incomplete_nonterminal_page_are_rejected(self) -> None:
@@ -863,7 +878,7 @@ class ListReadinessTests(unittest.IsolatedAsyncioTestCase):
                 payload["scoped_anchor_count"] = count
                 page.evaluate.return_value = payload
                 with self.assertRaises(scraper.ScrapeError):
-                    await scraper._load_list_page(page, 0, scraper.BrowserConfig(), expected_total)
+                    await scraper._load_list_page(page, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), expected_total)
                 page.evaluate.assert_awaited_once()
 
     async def test_terminal_page_accepts_one_snapshot_only_with_valid_end_marker(self) -> None:
@@ -882,11 +897,11 @@ class ListReadinessTests(unittest.IsolatedAsyncioTestCase):
                 page.evaluate.return_value = payload
                 if valid:
                     self.assertIs(
-                        await scraper._load_list_page(page, 0, scraper.BrowserConfig(), 1), payload
+                        await scraper._load_list_page(page, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), 1), payload
                     )
                 else:
                     with self.assertRaises(scraper.ScrapeError):
-                        await scraper._load_list_page(page, 0, scraper.BrowserConfig(), 1)
+                        await scraper._load_list_page(page, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), 1)
                 page.wait_for_timeout.assert_awaited_once_with(15_000)
                 page.evaluate.assert_awaited_once()
 
@@ -895,7 +910,7 @@ class ListReadinessTests(unittest.IsolatedAsyncioTestCase):
         page.goto.return_value = SimpleNamespace(status=200)
         page.evaluate.side_effect = RuntimeError("离线模拟页面脚本执行失败")
         with self.assertRaisesRegex(scraper.ScrapeError, "脚本执行失败"):
-            await scraper._load_list_page(page, 0, scraper.BrowserConfig(retries=3), None)
+            await scraper._load_list_page(page, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, retries=3), None)
         page.goto.assert_awaited_once()
         page.wait_for_timeout.assert_awaited_once_with(15_000)
         page.evaluate.assert_awaited_once()
@@ -904,7 +919,7 @@ class ListReadinessTests(unittest.IsolatedAsyncioTestCase):
 class ListBrowserRetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_ordinary_failures_restart_browser_with_same_profile_and_backoff(self) -> None:
         profile = Path("/unused-fixture-profile")
-        config = scraper.BrowserConfig(retries=3)
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, retries=3)
         payload = {"total": 28, "cards": [object()] * 30}
         events = MagicMock()
         with ExitStack() as stack:
@@ -951,7 +966,7 @@ class ListBrowserRetryTests(unittest.IsolatedAsyncioTestCase):
             events.attach_mock(sleep, "sleep")
             with self.assertRaises(scraper.AccessChallengeError):
                 await scraper._capture_list_page_with_profile(
-                    profile, 0, scraper.BrowserConfig(retries=3), None
+                    profile, 0, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, retries=3), None
                 )
 
         self.assertEqual([entry[0] for entry in events.mock_calls], [
@@ -964,7 +979,7 @@ class ListBrowserRetryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_second_browser_can_succeed_after_first_access_challenge(self) -> None:
         profile = Path("/unused-fixture-profile")
-        config = scraper.BrowserConfig(retries=3)
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, retries=3)
         payload = {"total": 28, "cards": [object()] * 30}
         with (
             patch.object(scraper, "_capture_list_page_attempt", new=AsyncMock(side_effect=[
@@ -1002,7 +1017,7 @@ class FullTraversalTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(scraper, "_capture_list_page_with_profile", side_effect=capture) as fetch:
             with patch.object(scraper.asyncio, "sleep", new_callable=AsyncMock) as sleep:
                 cards, pages, occurrences, duplicates = await scraper._collect_listing(
-                    Path("/unused-fixture-profile"), scraper.BrowserConfig(), None
+                    Path("/unused-fixture-profile"), scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None
                 )
         self.assertEqual([args.args[1] for args in fetch.await_args_list], [0, 1, 2, 3, 4])
         self.assertEqual((pages, occurrences, duplicates), (5, 5, 1))
@@ -1018,7 +1033,7 @@ class FullTraversalTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(scraper, "_visit_detail", side_effect=records) as visit:
             with patch.object(scraper, "_park_and_wait", new_callable=AsyncMock) as park:
                 result = await scraper._collect_details(
-                    [context], cards, scraper.BrowserConfig(), None
+                    [context], cards, scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION), None
                 )
         self.assertEqual(result, records)
         self.assertEqual([args.args[1] for args in visit.await_args_list], cards)
@@ -1113,7 +1128,7 @@ class VerificationFlowTests(unittest.IsolatedAsyncioTestCase):
             publish = stack.enter_context(patch("excel.write_excel", side_effect=AssertionError("验证不得导出 Excel")))
             save = stack.enter_context(patch("openpyxl.workbook.workbook.Workbook.save", side_effect=AssertionError("验证不得写工作簿")))
             full_crawl = stack.enter_context(patch.object(scraper, "scrape_all", side_effect=AssertionError("验证不得冒充全量")))
-            config = scraper.BrowserConfig(chrome_executable=Path(__file__))
+            config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, chrome_executable=Path(__file__))
             report = await scraper.verify_access(
                 config,
                 Path("/unused-fixture-reference.xlsx"),
@@ -1168,6 +1183,141 @@ class VerificationFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["detail_success_count"], 3)
         self.assertFalse(report["full_crawl_completed"])
         self.assertFalse(report["workbook_written"])
+
+
+class DynamicRegionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_eight_profiles_use_matching_context_and_probe(self) -> None:
+        self.assertEqual(len(scraper.APPROVED_PROFILE_IDS), 8)
+        region = scraper.BrowserRegion("SG", "en-SG", ("en-SG", "en"), "Asia/Singapore")
+        for profile_id in scraper.APPROVED_PROFILE_IDS:
+            with self.subTest(profile=profile_id):
+                fp = fingerprint(region, profile_id)
+                config = scraper.BrowserConfig(region=region, browser_profile=profile_id,
+                                               chrome_version=FIXTURE_VERSION)
+                observed = {**probe(), **{k: v for k, v in fp.items() if k not in {"region", "profile_id"}},
+                            "language": region.locale, "languages": list(region.languages),
+                            "time_zone": region.timezone_id}
+                self.assertTrue(scraper._valid_stealth_probe(observed, fp))
+                for key in ("webgl_renderer", "webgl_vendor", "max_touch_points", "pdf_viewer_enabled",
+                            "chrome_version", "platform", "hardware_concurrency", "screen_width"):
+                    self.assertFalse(scraper._valid_stealth_probe({**observed, key: None}, fp), key)
+                context = SimpleNamespace(add_init_script=AsyncMock(), close=AsyncMock())
+                playwright = SimpleNamespace(chromium=SimpleNamespace(
+                    launch_persistent_context=AsyncMock(return_value=context)), stop=AsyncMock())
+                with patch.object(scraper, "async_playwright", return_value=SimpleNamespace(
+                        start=AsyncMock(return_value=playwright))):
+                    await scraper._launch_context(config, Path("/unused-profile"))
+                options = playwright.chromium.launch_persistent_context.await_args.kwargs
+                self.assertEqual(options["user_agent"], fp["user_agent"])
+                self.assertEqual(options["screen"], {"width": fp["screen_width"], "height": fp["screen_height"]})
+                self.assertEqual(options["viewport"], options["screen"])
+                context.add_init_script.assert_awaited_once_with(script=scraper._stealth_script(fp))
+
+    async def test_bound_config_returns_independent_snapshots_and_never_reloads_catalog(self) -> None:
+        config = scraper.BrowserConfig(region=US_REGION, browser_profile="windows-nvidia", chrome_version=FIXTURE_VERSION)
+        first = scraper._require_fingerprint(config)
+        expected = fingerprint(US_REGION, "windows-nvidia")
+        first["region"]["languages"].append("changed")
+        first["webgl_renderer"] = "changed"
+        with patch.object(scraper, "load_fingerprint", side_effect=AssertionError("must stay frozen")):
+            self.assertEqual(scraper._require_fingerprint(config), expected)
+        config.browser_profile = "linux-amd"
+        with self.assertRaisesRegex(scraper.ScrapeError, "同轮切换"):
+            scraper._require_fingerprint(config)
+
+    async def test_fresh_runs_select_once_each_but_explicit_profile_never_draws(self) -> None:
+        with (patch.object(scraper, "choose_profile_id", side_effect=["windows-amd", "linux-amd"]) as choose,
+              patch.object(scraper, "_chrome_version", new=AsyncMock(return_value=FIXTURE_VERSION)) as version):
+            one = await scraper._prepare_browser_config(scraper.BrowserConfig(region=US_REGION), None)
+            two = await scraper._prepare_browser_config(scraper.BrowserConfig(region=US_REGION), None)
+            three = await scraper._prepare_browser_config(scraper.BrowserConfig(region=US_REGION, browser_profile="macos-amd"), None)
+            self.assertEqual((one.browser_profile, two.browser_profile, three.browser_profile),
+                             ("windows-amd", "linux-amd", "macos-amd"))
+            await scraper._prepare_browser_config(one, None)
+            self.assertEqual(choose.call_count, 2)
+            self.assertEqual(version.await_count, 3)
+
+    async def test_list_retry_clone_keeps_frozen_fingerprint(self) -> None:
+        config = scraper.BrowserConfig(region=US_REGION, browser_profile="linux-amd", chrome_version=FIXTURE_VERSION)
+        expected = scraper._require_fingerprint(config)
+        attempts = []
+        async def capture(profile, page_index, attempt_config, expected_total, **kwargs):
+            attempts.append(scraper._require_fingerprint(attempt_config))
+            if len(attempts) == 1:
+                raise scraper.ScrapeError("offline transient")
+            return {"total": 1, "cards": []}
+        with (patch.object(scraper, "load_fingerprint", side_effect=AssertionError("catalog reloaded")),
+              patch.object(scraper, "_capture_list_page_attempt", new=AsyncMock(side_effect=capture)),
+              patch.object(scraper.asyncio, "sleep", new_callable=AsyncMock)):
+            await scraper._capture_list_page_with_profile(Path("/unused-profile"), 0, config, None)
+        self.assertEqual(attempts, [expected, expected])
+
+    async def test_resolved_region_is_frozen_for_one_run_and_reused(self) -> None:
+        region = scraper.BrowserRegion("SG", "en-SG", ("en-SG", "en"), "Asia/Singapore")
+        original = scraper.BrowserConfig()
+        self.assertIsNone(original.region)
+        with (patch.object(scraper, "detect_browser_region", new=AsyncMock(return_value=region)) as detect,
+              patch.object(scraper, "_chrome_version", new=AsyncMock(return_value=FIXTURE_VERSION)) as version,
+              patch.object(scraper, "choose_profile_id", return_value="windows-intel") as choose):
+            prepared = await scraper._prepare_browser_config(original, None)
+            self.assertIs(await scraper._prepare_browser_config(prepared, None), prepared)
+        version.assert_awaited_once()
+        choose.assert_called_once()
+        self.assertEqual(prepared.browser_profile, "windows-intel")
+        detect.assert_awaited_once_with(original.chrome_executable, headless=False)
+        self.assertIs(prepared.region, region)
+        self.assertIsNone(original.region)
+
+    async def test_lookup_failure_stops_before_real_profile_or_store_access(self) -> None:
+        with (
+            patch.object(scraper, "detect_browser_region", new=AsyncMock(side_effect=ValueError("fixture"))),
+            patch.object(scraper, "_temporary_chrome_profile_base") as profile,
+            patch.object(scraper, "_collect_listing", new_callable=AsyncMock) as listing,
+            patch.object(scraper, "_launch_context", new_callable=AsyncMock) as launch,
+        ):
+            with self.assertRaisesRegex(scraper.ScrapeError, "地区识别失败"):
+                await scraper.scrape_all(scraper.BrowserConfig(chrome_executable=Path(__file__)))
+        profile.assert_not_called()
+        listing.assert_not_awaited()
+        launch.assert_not_awaited()
+
+    async def test_unresolved_lower_level_never_falls_back_to_us(self) -> None:
+        with patch.object(scraper, "async_playwright") as browser, \
+                patch.object(scraper.asyncio, "create_subprocess_exec", new_callable=AsyncMock) as node:
+            with self.assertRaisesRegex(scraper.ScrapeError, "尚未识别"):
+                await scraper._launch_context(scraper.BrowserConfig(), Path("/unused-profile"))
+            with self.assertRaisesRegex(scraper.ScrapeError, "尚未识别"):
+                await scraper._capture_node_list_snapshot(Path("/unused-profile"), 0, scraper.BrowserConfig())
+        browser.assert_not_called()
+        node.assert_not_awaited()
+
+    async def test_locales_render_payload_token_and_require_matching_probe(self) -> None:
+        for region in (
+            US_REGION,
+            scraper.BrowserRegion("SG", "en-SG", ("en-SG", "en"), "Asia/Singapore"),
+            scraper.BrowserRegion("PH", "en-PH", ("en-PH", "en"), "Asia/Manila"),
+        ):
+            with self.subTest(country=region.country_code):
+                rendered = scraper._stealth_script(fingerprint(region))
+                normalized = rendered.replace(
+                    json.dumps(fingerprint(region), ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+                    "__UGREEN_FINGERPRINT__",
+                )
+                self.assertEqual(normalized, scraper._stealth_template())
+                observed = {**probe(), "language": region.locale, "languages": list(region.languages),
+                            "time_zone": region.timezone_id}
+                self.assertTrue(scraper._valid_stealth_probe(observed, fingerprint(region)))
+                if region.country_code != "US":
+                    self.assertFalse(scraper._valid_stealth_probe(probe(), fingerprint(region)))
+                context = SimpleNamespace(add_init_script=AsyncMock(), close=AsyncMock())
+                playwright = SimpleNamespace(chromium=SimpleNamespace(
+                    launch_persistent_context=AsyncMock(return_value=context)), stop=AsyncMock())
+                manager = SimpleNamespace(start=AsyncMock(return_value=playwright))
+                with patch.object(scraper, "async_playwright", return_value=manager):
+                    await scraper._launch_context(scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=region), Path("/unused-profile"))
+                options = playwright.chromium.launch_persistent_context.await_args.kwargs
+                self.assertEqual((options["locale"], options["timezone_id"]), (region.locale, region.timezone_id))
+                context.add_init_script.assert_awaited_once_with(script=rendered)
 
 
 if __name__ == "__main__":

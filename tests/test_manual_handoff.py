@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills/shopee-ugreen-topsales/scripts"))
 import scraper
 import run_scrape as runner
+from test_scraper import FIXTURE_VERSION, US_REGION, fingerprint
 
 
 def child_with_events(events):
@@ -41,7 +42,7 @@ class ManualBridgeTests(unittest.IsolatedAsyncioTestCase):
         child, commands = child_with_events([{"event": "manual_snapshot", "snapshot": {}}])
         with patch.object(scraper, "_wait_for_manual_resume", new_callable=AsyncMock) as resume, \
                 patch.object(scraper, "_validate_list_snapshot", return_value={}):
-            await scraper._communicate_manual_capture(child, {}, 0, None, 1, None)
+            await scraper._communicate_manual_capture(child, {}, 0, None, 1, None, fingerprint())
         resume.assert_not_awaited()
         self.assertEqual([c.get("command") for c in commands], [None, "accept"])
 
@@ -55,7 +56,7 @@ class ManualBridgeTests(unittest.IsolatedAsyncioTestCase):
             {"event": "manual_handoff_ready"}, {"event": "manual_snapshot", "snapshot": value},
         ])
         with patch.object(scraper, "_wait_for_manual_resume", new_callable=AsyncMock):
-            result = await scraper._communicate_manual_capture(child, {}, 0, None, 1, None)
+            result = await scraper._communicate_manual_capture(child, {}, 0, None, 1, None, fingerprint())
         self.assertEqual(result, value)
         self.assertEqual(commands[-1], {"command": "accept"})
 
@@ -67,7 +68,7 @@ class ManualBridgeTests(unittest.IsolatedAsyncioTestCase):
         ])
         with patch.object(scraper, "_wait_for_manual_resume", new_callable=AsyncMock) as resume, \
                 patch.object(scraper, "_validate_list_snapshot", return_value={}):
-            await scraper._communicate_manual_capture(child, {}, 0, None, 1, None)
+            await scraper._communicate_manual_capture(child, {}, 0, None, 1, None, fingerprint())
         self.assertEqual(resume.await_count, 2)
         self.assertEqual([c.get("command") for c in commands], [None, "resume", "resume", "accept"])
 
@@ -78,7 +79,7 @@ class ManualBridgeTests(unittest.IsolatedAsyncioTestCase):
         ])
         with patch.object(scraper, "_wait_for_manual_resume", new_callable=AsyncMock), \
                 patch.object(scraper, "_validate_list_snapshot", side_effect=[AttributeError("private"), {}]):
-            await scraper._communicate_manual_capture(child, {}, 0, None, 1, None)
+            await scraper._communicate_manual_capture(child, {}, 0, None, 1, None, fingerprint())
         self.assertEqual([c.get("command") for c in commands], [None, "resume", "hold", "resume", "accept"])
 
     async def test_rejected_snapshot_holds_same_window_then_accepts_only_validated_snapshot(self):
@@ -90,7 +91,7 @@ class ManualBridgeTests(unittest.IsolatedAsyncioTestCase):
         messages = []
         with patch.object(scraper, "_wait_for_manual_resume", new_callable=AsyncMock) as resume, \
                 patch.object(scraper, "_validate_list_snapshot", side_effect=[scraper.ScrapeError("blocked"), {}]) as validate:
-            result = await scraper._communicate_manual_capture(child, {"url": "fixture"}, 0, None, 1, messages.append)
+            result = await scraper._communicate_manual_capture(child, {"url": "fixture"}, 0, None, 1, messages.append, fingerprint())
         self.assertEqual(result, valid)
         self.assertEqual(resume.await_count, 2)
         self.assertEqual(validate.call_count, 2)
@@ -106,7 +107,7 @@ class ManualBridgeTests(unittest.IsolatedAsyncioTestCase):
             await permission.wait()
         with patch.object(scraper, "_wait_for_manual_resume", new=resume), \
                 patch.object(scraper, "_validate_list_snapshot", return_value={}):
-            task = asyncio.create_task(scraper._communicate_manual_capture(child, {}, 0, None, 0.01, None))
+            task = asyncio.create_task(scraper._communicate_manual_capture(child, {}, 0, None, 0.01, None, fingerprint()))
             await asyncio.sleep(0.04)
             self.assertFalse(task.done())
             self.assertEqual(commands, [{}])
@@ -114,7 +115,7 @@ class ManualBridgeTests(unittest.IsolatedAsyncioTestCase):
             await task
 
     async def test_manual_failure_never_runs_automatic_three_attempt_restart(self):
-        config = scraper.BrowserConfig(manual_list_handoff=True)
+        config = scraper.BrowserConfig(browser_profile="windows-intel", chrome_version=FIXTURE_VERSION, region=US_REGION, manual_list_handoff=True)
         with patch.object(scraper, "_capture_list_page_attempt", new=AsyncMock(side_effect=scraper.ScrapeError("cancelled"))) as capture, \
                 patch.object(scraper.asyncio, "sleep", new_callable=AsyncMock) as sleep:
             with self.assertRaises(scraper.ScrapeError):
@@ -124,6 +125,14 @@ class ManualBridgeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ManualCliTests(unittest.TestCase):
+    def test_cli_exposes_eight_profiles_and_defaults_to_auto(self):
+        base = ["--project-root", "/fixture", "--verify-access"]
+        self.assertEqual(runner._parser().parse_args(base).browser_profile, "auto")
+        self.assertEqual(len(scraper.APPROVED_PROFILE_IDS), 8)
+        for profile_id in scraper.APPROVED_PROFILE_IDS:
+            args = runner._parser().parse_args(base + ["--browser-profile", profile_id])
+            self.assertEqual(args.browser_profile, profile_id)
+
     def test_manual_mode_is_explicit_interactive_single_worker(self):
         base = ["--project-root", "/fixture", "--manual-list-handoff"]
         with patch.object(runner.sys.stdin, "isatty", return_value=True):
