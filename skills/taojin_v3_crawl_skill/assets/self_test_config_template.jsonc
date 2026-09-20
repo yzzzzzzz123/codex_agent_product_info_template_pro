@@ -1,0 +1,122 @@
+{
+  // Stage2 自检配置模板
+  // 用于 stage2_self_test.py 验证提取结果的字段完整性和一致性
+
+  // 用例目录（包含 final_code.py 和 script_res.json）
+  "case_dir": "result/script_gen/",
+
+  // 期望的 PDP URL（可选，默认从 script_res.json 的 source_url 读取）
+  "detail_url": "https://www.example.com/product/some-product",
+
+  // 详细输出路径（可选，不设置则输出到标准输出）
+  "output": "result/script_gen/self_test_result.json",
+
+  // 输出格式：true=JSON, false=人类可读文本
+  "json_output": false,
+
+  // 严格模式：warning 也视为失败
+  "strict": false,
+
+  // 必选检查项（可按站点调整）
+  "checks": {
+    // 检查必需文件是否存在
+    "case_files": true,
+
+    // 检查 SPU 字段完整性
+    "spu_fields": true,
+
+    // 检查价格和货币格式
+    "price_currency": true,
+
+    // 检查 SKU 字段完整性
+    "sku_fields": true,
+
+    // 检查 review stats 字段（如启用）
+    "review_stats": true,
+
+    // 检查单空属性 SKU 是否应折叠
+    "empty_sku_collapse": true,
+
+    // 检查 SPU/SKU 一致性
+    "spu_sku_consistency": true
+  },
+
+  // 期望的 SPU 必需字段（默认值）
+  "required_spu_fields": [
+    "source_url",
+    "source_item_name",
+    "source_pics",
+    "descriptions",
+    "source_origin_price",
+    "source_activity_price",
+    "source_price_currency",
+    "props",
+    "skus",
+    "status"
+  ],
+
+  // 期望的 SKU 必需字段
+  "required_sku_fields": [
+    "sku_props",
+    "source_origin_price",
+    "source_activity_price",
+    "source_pics",
+    "status"
+  ],
+
+  // 可选的 SPU 字段（存在则检查类型）
+  "optional_spu_fields": [
+    "source_score",
+    "source_cmms",
+    "not_detail",
+    "default_sku_index",
+    "effective_price"
+  ],
+
+  // 价格检查：活动价格必须 <= 原价
+  "price_order_check": true,
+
+  // 货币代码必须是 3 位大写 ISO 货币代码
+  "currency_iso_check": true,
+
+  // SKU 属性键一致性检查
+  "sku_props_keys_consistency": true,
+
+  // review 分数范围检查（0-5）
+  "review_score_range": [0, 5],
+
+  // 状态值定义
+  "status_values": {
+    "available": 1,
+    "unavailable": 0
+  },
+
+  // 站点特定配置
+  "site_specific": {
+    // 站点域名
+    "site_domain": "example.com",
+
+    // 是否为多 SKU PDP
+    "is_multi_sku": false,
+
+    // 是否启用 review stats
+    "review_stats_enabled": false,
+
+    // review provider 类型
+    "review_provider": null,
+
+    // 预期 SKU 数量（用于检查 SKU 数量级是否一致）
+    "expected_sku_count": null,
+
+    // 预期货币
+    "expected_currency": "USD"
+  },
+
+  // 证据文件路径（相对 case_dir）
+  "evidence_files": {
+    "static_html": "../raw_html/static_page.html",
+    "rendered_html": "../raw_html/rendered_page.html",
+    "dom_analysis": "../dom_analysis.md",
+    "field_mapping": "../context/field_mapping.md"
+  }
+}

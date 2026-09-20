@@ -1,18 +1,25 @@
-[build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "shopees-ugreen-topsales-scraper"
-version = "1.0.0"
-description = "Shopee Philippines UGREEN Top Sales product scraper"
-readme = "README.md"
+name = "codex-agent-product-info-template-pro"
+version = "0.1.0"
+description = "Codex agent product info extraction template"
 requires-python = ">=3.10"
 dependencies = [
-    "playwright==1.63.0",
-    "openpyxl==3.1.5",
-    "lxml==6.1.3",
+    "duckdb",
+    "openpyxl",
+    "pandas",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "seaborn",
+    "PyYAML>=6.0",
+    "playwright",
+    "beautifulsoup4",
+    "lxml",
+    "tiktoken",
+    "requests",
+    "curl_cffi",
 ]
 
-[tool.setuptools]
-py-modules = []
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

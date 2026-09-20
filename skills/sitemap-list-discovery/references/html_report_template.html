@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>List Skill Discovery Report</title>
+<style>
+:root {
+  --border: #d7dde8;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+header {
+  padding: 22px 28px 14px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border);
+}
+h1 { margin: 0 0 8px; font-size: 24px; letter-spacing: 0; }
+.subtitle { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.wrap { max-width: 1186px; margin: 0 auto; padding: 18px 22px 60px; }
+.legend, .tools, .switcher, .site-head, .mark-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.legend { margin-bottom: 24px; }
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.tools { margin: 14px 0; }
+button {
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: #202938;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+button:hover { background: #f275f9; }
+.site-btn {
+  border-color: transparent;
+  color: #ffffff;
+  opacity: 0.88;
+}
+.site-btn.active {
+  filter: brightness(1.08) saturate(1.05);
+  font-weight: 700;
+}
+.site-btn.hidden { display: none; }
+.panel {
+  margin-top: 16px;
+  padding: 22px 26px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px 14px;
+  align-items: start;
+}
+.label { color: var(--muted); font-size: 13px; }
+.value {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+pre {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f4f6fa;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.process-toggle { margin-top: 8px; }
+.copy-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.collapsed { display: none; }
+.code-box {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f4f6fa;
+  padding: 12px;
+}
+.code-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.sample-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.sample-links li {
+  margin-bottom: 6px;
+}
+.sample-links a {
+  color: #1f6feb;
+  text-decoration: none;
+}
+.sample-links a:hover { text-decoration: underline; }
+.sample-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.mark-inline button {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.mark-inline button.active {
+  font-weight: 700;
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>List Skill Discovery Report</h1>
+  <div class="subtitle">Single-file self-contained report. All data, CSS, and JS are embedded.</div>
+</header>
+<div class="wrap">
+  <div class="legend">
+    <span><i class="dot" style="background:#0ba63e"></i>ok</span>
+    <span><i class="dot" style="background:#008af7"></i>partial</span>
+    <span><i class="dot" style="background:#ff8a00"></i>none</span>
+    <span><i class="dot" style="background:#6b7280"></i>blocked</span>
+    <span><i class="dot" style="background:#e60023"></i>dead</span>
+    <span><i class="dot" style="background:#7c3aed"></i>amb</span>
+  </div>
+  <div class="tools">
+    <button id="showAll">显示全部</button>
+    <button id="failOnly">仅失败</button>
+    <button id="exportMarks">导出 marks</button>
+    <button id="importMarks">导入 marks</button>
+    <button id="copyMarks">复制 marks</button>
+    <button id="clearMarks">清空 marks</button>
+    <span id="toolHint" style="color:var(--muted);font-size:12px;"></span>
+  </div>
+  <div id="switcher" class="switcher"></div>
+  <div id="panel" class="panel"></div>
+</div>
+<script id="report-data-b64" type="text/plain">__REPORT_DATA_B64__</script>
+<script>
+const DATA = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(document.getElementById('report-data-b64').textContent.trim()), c => c.charCodeAt(0))));
+const COLORS = {
+  "ok": "#0ba63e",
+  "partial": "#008af7",
+  "none": "#ff8a00",
+  "blocked": "#6b7280",
+  "dead": "#e60023",
+  "amb": "#7c3aed"
+};
+const STORE_KEY = "lastSkuManualMarks:v2";
+
+let active = 0;
+let failOnly = false;
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, m => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[m]));
+}
+
+function readMarks() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); }
+  catch (e) { return {}; }
+}
+
+function markStatus(value) {
+  return typeof value === "string" ? value : (value && value.status) || "";
+}
+
+function marks() {
+  const raw = readMarks();
+  const clean = {};
+  Object.keys(raw).forEach(k => {
+    const s = markStatus(raw[k]);
+    if (s) clean[k] = s;
+  });
+  return clean;
+}
+
+function saveMarks(v) { localStorage.setItem(STORE_KEY, JSON.stringify(v)); }
+
+function markOf(site) { return marks()[site] || ""; }
+
+function renderSwitcher() {
+  const wrap = document.getElementById("switcher");
+  wrap.innerHTML = "";
+  DATA.forEach((d, i) => {
+    if (failOnly && !["blocked", "dead", "amb", "none"].includes(d.coverage)) return;
+    const b = document.createElement("button");
+    b.className = "site-btn" + (i === active ? " active" : "");
+    b.style.background = COLORS[d.coverage] || "#6b7280";
+    b.textContent = d.input_site || d.effective_origin || ("site-" + (i + 1));
+    b.onclick = () => { active = i; render(); };
+    wrap.appendChild(b);
+  });
+}
+
+function listItems(items) {
+  return '<ul>' + (items || []).map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+}
+
+function sampleLinks(items, reasons) {
+  return '<ul class="sample-links">' + (items || []).map((u, i) => {
+    const url = String(u == null ? "" : u);
+    const reason = String((reasons || [])[i] || "");
+    const note = reason ? "<div class=\"sample-note\">" + esc(reason) + "</div>" : "";
+    return "<li><a href=\"" + esc(url) + "\" target=\"_blank\" rel=\"noopener noreferrer\">" + esc(url) + "</a>" + note + "</li>";
+  }).join("") + "</ul>";
+}
+
+function shortText(x) {
+  const s = String(x == null ? "" : x);
+  return s.length > 120 ? s.slice(0, 120) + "..." : s;
+}
+
+function copyText(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
+  const ok = document.execCommand("copy");
+  document.body.removeChild(ta);
+  if (!ok) throw new Error("copy failed");
+  return true;
+}
+
+function markInline(d) {
+  const status = markOf(d.input_site);
+  return "<div class=\"mark-inline\">" +
+    "<span style=\"color:var(--muted);font-size:12px;\">人工标记:</span>" +
+    "<button data-mark=\"pending\" class=\"" + (status === "pending" ? "active" : "") + "\">待处理</button>" +
+    "<button data-mark=\"pass\" class=\"" + (status === "pass" ? "active" : "") + "\">通过</button>" +
+    "<button data-mark=\"reject\" class=\"" + (status === "reject" ? "active" : "") + "\">拒绝</button>" +
+    "<button data-mark=\"reset\">重置</button>" +
+    "</div>";
+}
+
+function renderPanel() {
+  const d = DATA[active];
+  const asCode = d.companion && d.companion.type === "list_custom_code";
+  const companion = asCode
+    ? "<div class=\"code-box collapsed\" id=\"codeBox\"><div class=\"code-tools\"><button class=\"code-toggle\" id=\"toggleCode\">展开 list_custom_code</button><button id=\"copyCode\">复制 list_custom_code</button></div><pre>" + esc(d.companion.value || "") + "</pre></div>"
+    : "<div class=\"value\">" + esc((d.companion && d.companion.value) || "") + "</div>";
+
+  document.getElementById("panel").innerHTML =
+    "<div class=\"site-head\"><h2>" + esc(d.input_site) + "</h2>" + markInline(d) + "</div>" +
+    "<div class=\"grid\">" +
+    "<div class=\"label\">effective_origin</div><div class=\"value\">" + esc(d.effective_origin || "") + "</div>" +
+    "<div class=\"label\">commerce_origin</div><div class=\"value\">" + esc(d.commerce_origin || "") + "</div>" +
+    "<div class=\"label\">scope_reason</div><div class=\"value\">" + esc(d.scope_reason || "") + "</div>" +
+    "<div class=\"label\">sitemap</div><div class=\"value\">" + esc(d.sitemap || "") + "</div>" +
+    "<div class=\"label\">" + esc((d.companion && d.companion.type) || "companion") + "</div>" + companion +
+    "<div class=\"label\">sample_detail_uris</div><div class=\"value\">" + sampleLinks(d.sample_detail_uris, d.sample_detail_reasons) + "</div>" +
+    "<div class=\"label\">process_notes</div><div class=\"value\">" + listItems(d.process_notes) + "</div>" +
+    "<div class=\"label\">coverage</div><div class=\"value\">" + esc(d.coverage || "") + (d.coverage_note ? " (" + esc(d.coverage_note) + ")" : "") + "</div>" +
+    "<div class=\"label\">observed_count</div><div class=\"value\">" + esc(d.observed_count == null ? "" : d.observed_count) + "</div>" +
+    "</div>";
+
+  document.querySelectorAll("[data-mark]").forEach(btn => {
+    btn.onclick = () => {
+      const val = btn.getAttribute("data-mark");
+      const all = marks();
+      if (val === "reset") delete all[d.input_site];
+      else all[d.input_site] = val;
+      saveMarks(all);
+      render();
+    };
+  });
+
+  const toggle = document.getElementById("toggleCode");
+  if (toggle) {
+    toggle.onclick = () => {
+      const box = document.getElementById("codeBox");
+      const collapsed = box.classList.toggle("collapsed");
+      toggle.textContent = collapsed ? "展开 list_custom_code" : "收起 list_custom_code";
+    };
+  }
+  const copy = document.getElementById("copyCode");
+  if (copy) {
+    copy.onclick = async () => {
+      try {
+        await copyText(d.companion.value || "");
+        document.getElementById("toolHint").textContent = "已复制";
+      } catch (err) {
+        document.getElementById("toolHint").textContent = "复制失败";
+      }
+    };
+  }
+}
+
+function render() {
+  renderSwitcher();
+  renderPanel();
+}
+
+document.getElementById("showAll").onclick = () => { failOnly = false; render(); };
+document.getElementById("failOnly").onclick = () => { failOnly = true; render(); };
+document.getElementById("exportMarks").onclick = async () => {
+  try {
+    await copyText(JSON.stringify(readMarks(), null, 2));
+    document.getElementById("toolHint").textContent = "已复制 marks JSON";
+  } catch (e) {
+    document.getElementById("toolHint").textContent = "导出失败";
+  }
+};
+document.getElementById("copyMarks").onclick = async () => {
+  try {
+    await copyText(JSON.stringify(readMarks()));
+    document.getElementById("toolHint").textContent = "已复制 marks";
+  } catch (e) {
+    document.getElementById("toolHint").textContent = "复制失败";
+  }
+};
+document.getElementById("clearMarks").onclick = () => {
+  if (confirm("确认清空所有人工标记?")) {
+    localStorage.removeItem(STORE_KEY);
+    render();
+  }
+};
+
+render();
+</script>
+</body>
+</html>

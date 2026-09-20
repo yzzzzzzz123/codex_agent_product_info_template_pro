@@ -1,0 +1,134 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Extraction Result Schema",
+  "description": "Schema for SPU/SKU extraction result (script_res). Used by Stage2 and Stage3 outputs.",
+  "type": "object",
+  "required": [
+    "source_url",
+    "source_item_name",
+    "source_pics",
+    "descriptions",
+    "source_origin_price",
+    "source_activity_price",
+    "source_price_currency",
+    "props",
+    "skus",
+    "status"
+  ],
+  "properties": {
+    "source_url": {
+      "type": "string",
+      "description": "Product detail page URL (absolute URL)"
+    },
+    "source_item_name": {
+      "type": "string",
+      "description": "Product title"
+    },
+    "source_pics": {
+      "type": "array",
+      "description": "SPU-level product image URLs (absolute URLs)",
+      "items": { "type": "string" }
+    },
+    "descriptions": {
+      "type": "array",
+      "description": "Product description paragraphs (plain text or HTML)",
+      "items": { "type": "string" }
+    },
+    "source_origin_price": {
+      "type": ["number", "null"],
+      "description": "Original/list price (numeric, null if missing)"
+    },
+    "source_activity_price": {
+      "type": ["number", "null"],
+      "description": "Current/sale/activity price (numeric, null if missing)"
+    },
+    "source_price_currency": {
+      "type": ["string", "null"],
+      "description": "3-letter uppercase currency code (e.g. USD, CNY, EUR)",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "props": {
+      "type": "object",
+      "description": "SPU-level properties dictionary (empty object if none)",
+      "additionalProperties": true
+    },
+    "status": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "On-shelf status: 1 = on-shelf, 0 = off-shelf/out of stock"
+    },
+    "skus": {
+      "type": "array",
+      "description": "List of SKUs",
+      "items": {
+        "$ref": "#/definitions/SkuItem"
+      }
+    },
+    "source_score": {
+      "type": ["number", "null"],
+      "description": "Product rating score (null if not available or not requested)"
+    },
+    "source_cmms": {
+      "type": ["integer", "null"],
+      "description": "Review comment count (null if not available or not requested)"
+    },
+    "not_detail": {
+      "type": ["string", "null"],
+      "description": "Non-detail-page marker: 'yes', 'deadlink', etc. null means normal PDP."
+    },
+    "default_sku_index": {
+      "type": "integer",
+      "description": "Index of default selected SKU (post-processing field)"
+    },
+    "effective_price": {
+      "type": "number",
+      "description": "Effective price from default SKU (post-processing field)"
+    }
+  },
+  "definitions": {
+    "SkuItem": {
+      "type": "object",
+      "required": [
+        "sku_props",
+        "source_origin_price",
+        "source_activity_price",
+        "source_pics",
+        "status"
+      ],
+      "properties": {
+        "sku_props": {
+          "type": "object",
+          "description": "SKU-level properties dictionary",
+          "additionalProperties": true
+        },
+        "source_origin_price": {
+          "type": ["number", "null"],
+          "description": "SKU original price"
+        },
+        "source_activity_price": {
+          "type": ["number", "null"],
+          "description": "SKU activity/sale price"
+        },
+        "source_price_currency": {
+          "type": ["string", "null"],
+          "description": "SKU currency (usually same as SPU)",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "source_pics": {
+          "type": "array",
+          "description": "SKU-level image URLs (absolute URLs)",
+          "items": { "type": "string" }
+        },
+        "status": {
+          "type": "integer",
+          "enum": [0, 1],
+          "description": "SKU status: 1 = available, 0 = unavailable"
+        },
+        "sku_id": {
+          "type": ["string", "null"],
+          "description": "Optional SKU identifier"
+        }
+      }
+    }
+  }
+}
